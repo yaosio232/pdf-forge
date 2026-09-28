@@ -53,3 +53,7 @@
 - 禁止使用 CMD、PowerShell、verification project、service 或 API 直接執行分割／合併，並將其結果冒充 UI 功能測試。
 - 命令列仍可用於建置、編譯、靜態檢查與讀取 UI 產物；但不得用命令列代替 UI 的切割或合併操作。
 - 每項 UI 測試必須記錄實際操作、畫面結果與證據路徑；未能由 UI 完成的項目標示 `BLOCKED`，不得標示 `PASS`。
+
+## F. 單次發佈例外（2026-09-28）
+
+使用者於 2026-09-28 明確指示「不用驗了，直接上傳到git，然後release那邊要放單檔EXE」。因此僅針對這次 GitHub Release，允許略過尚未完成的 WinForms UI 驗收並上傳已建置的單檔 EXE。原因是使用者要求立即發佈；前次 UI 操作因 Windows 畫面擷取與點擊座標不可用而受阻。此例外不修改 A、B、C、E 的一般驗收標準，也不將任何 `BLOCKED` 測項改標 `PASS`。Release 說明與回報必須明確標示 UI 驗收未完成，不能宣稱功能驗收通過或 release ready。

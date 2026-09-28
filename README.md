@@ -1,15 +1,52 @@
 # PDF Forge
 
-PDF Forge 是本機優先的 Windows PDF 工具，提供分割、合併、預覽，以及使用已知密碼批次移除 PDF 加密。
+PDF Forge 是 Windows 桌面 PDF 工具。你可以用它預覽並分割 PDF、依指定順序合併文件，或在知道密碼的情況下批次產生未加密的 PDF 副本。檔案在本機處理。
 
-原始碼、測試證據與可交付執行檔分開存放；發佈版輸出至 `dist/PDF Forge/`，不納入 Git。
+## 可以做什麼
 
-## 開發前必讀：逐項測試標準
+- **分割 PDF**：開啟一份 PDF，瀏覽頁面並在想切開的頁面後按剪刀。右側會顯示各份文件的頁碼範圍，也能在儲存前修改檔名。
+- **合併文件**：加入 PDF、DOC 或 DOCX，調整順序後輸出成一份 PDF。合併 Word 文件需要電腦已安裝桌面版 Microsoft Word。
+- **批次解除 PDF 加密**：選取多份 PDF，輸入它們共用的已知密碼，再選擇輸出資料夾。程式不會猜測密碼，原始檔案不會被修改。
 
-所有後續開發都必須遵守 [`AGENTS.md`](AGENTS.md)。正式 PDF 測項每個至少 20 頁；分割固定使用全新 40 頁 PDF，切成 6 份（7/7/7/7/6/6）；並逐項完成主瀏覽區、滾輪、頁間切點、側欄、縮放與輸出完整性測試。未完成逐項測試與證據，不得回報成功。
+## 開始使用
 
-- [`PROGRAM_DOCUMENTATION.md`](PROGRAM_DOCUMENTATION.md)：程式目的、架構、UI、每個方法、資料流、相依套件、錯誤處理、限制與目前建置基線。
-- [`LOOPING_TEST_PLAN.md`](LOOPING_TEST_PLAN.md)：涵蓋 UI、多種 PDF、超連結、書籤、表單、加密、簽章、Word 轉換、效能、復原能力，以及 Agent 自行取得公開 PDF 時的單向下載與零外流規則。
-- [`LOOPING_TEST_PROMPTS.md`](LOOPING_TEST_PROMPTS.md)：主控、公開語料取得、分輪執行、缺陷修正、回歸與 release gate 提示詞。
+在 Windows 上開啟 `PDF Forge.exe`。若你是從原始碼執行，請先安裝 .NET 6 SDK，再於專案目錄執行：
 
-文件基準日期：2026-09-24。文件以工作區當日的原始碼為準；`After`、`Form1.cs.copy` 與既有 EXE 只視為歷史／建置產物，不代表目前原始碼行為。
+```powershell
+dotnet run --project .\Pdf_Merger.csproj
+```
+
+程式有三個分頁，開啟時會先顯示 **Split PDF**：
+
+1. **分割**：按 **Open PDF** 或拖入 PDF；用滑鼠滾輪瀏覽頁面，也可以點縮圖或輸入頁碼跳頁。按頁面之間的剪刀加入切點，再按一次可取消。確認右側的分割結果與檔名後，按 **Save ... split PDFs** 選擇儲存位置。
+2. **合併**：切到 **Merge PDFs**，按選檔按鈕或拖入 PDF／Word 文件；用上下移動按鈕調整順序，接著按 **Merge PDF** 選擇輸出檔名。
+3. **解除加密**：切到 **Unlock PDFs**，加入加密 PDF，輸入已知密碼並選擇輸出資料夾，最後按 **Unlock PDFs**。所有選取的檔案會使用同一組密碼。
+
+分割時的 **−**、**+** 和 **Fit** 可調整預覽大小。儲存分割結果時，檔案會使用右側清單中的名稱，放在所選位置的資料夾內。請在儲存前確認檔名與輸出位置。
+
+## 從原始碼建置
+
+本專案使用 C#、WinForms 與 .NET 6，主要目標是 Windows x64。建置與執行測試：
+
+```powershell
+dotnet restore .\Pdf_Merger.sln
+dotnet build .\Pdf_Merger.sln --no-restore
+dotnet test .\Pdf_Merger.sln --no-build --logger "console;verbosity=minimal"
+```
+
+若要建立可交付的單檔執行檔：
+
+```powershell
+dotnet publish .\Pdf_Merger.csproj -c Release -r win-x64 --self-contained
+```
+
+發佈產物由 .NET 放在 `bin/Release/` 下的 `publish` 目錄；`dist/` 是專案另行整理交付檔案時使用的目錄，不納入 Git。
+
+## 專案文件
+
+- [程式文件](PROGRAM_DOCUMENTATION.md)：架構、資料流與實作細節。部分內容以舊版程式為基準，查閱現況時請以原始碼為準。
+- [開發與驗收規範](AGENTS.md)：修改專案後必須執行的測項與證據要求。
+- [完整測試計畫](LOOPING_TEST_PLAN.md)：PDF、UI、Word、效能與發佈驗收的測試範圍。
+- [測試執行提示詞](LOOPING_TEST_PROMPTS.md)：分輪測試與回歸流程。
+
+測試規範要求以全新 40 頁 PDF 實際操作 WinForms 分割介面，逐項驗證預覽、切點與六份輸出。建置或單元測試通過，不能取代這些 UI 驗收結果。

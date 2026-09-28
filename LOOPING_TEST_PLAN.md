@@ -12,6 +12,10 @@
 
 逐項 ID、操作、預期結果與完成 gate 以 [`AGENTS.md`](AGENTS.md) 為準。
 
+### 2026-09-28 單次發佈例外
+
+使用者於 2026-09-28 明確要求略過驗證、直接上傳 GitHub，並在 Release 附上單檔 EXE。本次發佈因此可在 WinForms UI 驗收尚未完成時進行；原因與範圍記錄於 [`AGENTS.md`](AGENTS.md) F 節。前次執行紀錄位於 `TestResults/20260928-163832-51a9413/`：建置與 18 個單元測試通過，SPLIT-01 至 SPLIT-12 均為 `BLOCKED`。本次例外僅限該次發佈，不改動測項標準或未來的 release gate；發佈說明須揭露未完成的 UI 驗收。
+
 ## 1. 目標
 
 以可重複、可停止、可追溯的循環驗證 PDF Merger。測試不只判斷「有產生 PDF」，還要判斷頁面內容、順序、書籤、超連結、annotations、中繼資料、錯誤復原與 UI 是否符合契約。
