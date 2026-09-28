@@ -2,6 +2,8 @@
 
 PDF Forge 是 Windows 桌面 PDF 工具。你可以用它預覽並分割 PDF、依指定順序合併文件，或在知道密碼的情況下批次產生未加密的 PDF 副本。檔案在本機處理。
 
+原始碼公開在 [GitHub](https://github.com/yaosio232/pdf-forge)；Windows 單檔 EXE 可從 [Releases](https://github.com/yaosio232/pdf-forge/releases) 下載。
+
 ## 可以做什麼
 
 - **分割 PDF**：開啟一份 PDF，瀏覽頁面並在想切開的頁面後按剪刀。右側會顯示各份文件的頁碼範圍，也能在儲存前修改檔名。
@@ -42,11 +44,18 @@ dotnet publish .\Pdf_Merger.csproj -c Release -r win-x64 --self-contained
 
 發佈產物由 .NET 放在 `bin/Release/` 下的 `publish` 目錄；`dist/` 是專案另行整理交付檔案時使用的目錄，不納入 Git。
 
+## 開源授權
+
+PDF Forge 的原始程式碼以 [GNU Affero General Public License v3.0（AGPL-3.0-only）](LICENSE.md) 開源。你可以使用、研究、修改與再散布，但散布修改版或提供網路服務時，須遵守 AGPLv3 的原始碼與授權告知義務。本工具產生或處理的 PDF，不會只因使用本工具而自動套用 AGPLv3。
+
+PDF Forge 使用 [iTextSharp 5.5.13.4](https://www.nuget.org/packages/iTextSharp/5.5.13.4)，它採 AGPLv3／商業授權雙軌；也使用採 MIT 授權的 BouncyCastle.Cryptography。這些相依套件保留各自的著作權與授權條款，詳見 [授權與第三方聲明](NOTICE.md)。本專案不提供保固。
+
 ## 專案文件
 
 - [程式文件](PROGRAM_DOCUMENTATION.md)：架構、資料流與實作細節。部分內容以舊版程式為基準，查閱現況時請以原始碼為準。
 - [開發與驗收規範](AGENTS.md)：修改專案後必須執行的測項與證據要求。
 - [完整測試計畫](LOOPING_TEST_PLAN.md)：PDF、UI、Word、效能與發佈驗收的測試範圍。
 - [測試執行提示詞](LOOPING_TEST_PROMPTS.md)：分輪測試與回歸流程。
+- [授權與第三方聲明](NOTICE.md)：專案授權範圍、主要相依套件與原始碼取得方式。
 
 測試規範要求以全新 40 頁 PDF 實際操作 WinForms 分割介面，逐項驗證預覽、切點與六份輸出。建置或單元測試通過，不能取代這些 UI 驗收結果。

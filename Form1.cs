@@ -3674,6 +3674,12 @@ public partial class Form1 : Form
             "可使用滑鼠滾輪、頁碼欄位或上下鍵翻頁；縮圖會在背景載入。\r\n\r\n" +
             "注意事項\r\n" +
             "所有處理都在本機完成。DOC/DOCX 轉換需要 Microsoft Word 桌面版自動化；合併後不保證保留簽章、表單、附件、圖層、標記結構或 PDF/A、PDF/UA 相容性。發布前請務必檢查輸出檔案。\r\n\r\n" +
+            "開源授權\r\n" +
+            "Copyright © 2026 yaosio232。PDF Forge 依 GNU AGPL v3 授權提供，可依條款使用、修改與再散布；本程式不提供任何保固。\r\n" +
+            "原始碼：https://github.com/yaosio232/pdf-forge\r\n" +
+            "授權全文：https://github.com/yaosio232/pdf-forge/blob/main/LICENSE.md\r\n" +
+            "第三方聲明：https://github.com/yaosio232/pdf-forge/blob/main/NOTICE.md\r\n" +
+            "PDF 引擎 iTextSharp 5.5.13.4 採 AGPLv3／商業授權雙軌；BouncyCastle.Cryptography 採 MIT 授權。\r\n\r\n" +
             "記錄\r\n" +
             "每次操作會在選定輸出 PDF 的同一資料夾留下 PDF_Forge_Error_Log.txt。"));
         englishTab.Controls.Add(CreateAboutText(
@@ -3690,6 +3696,12 @@ public partial class Form1 : Form
             "Use the mouse wheel, the page field, or the Up/Down keys to move through pages. Thumbnails are loaded in the background.\r\n\r\n" +
             "Notes\r\n" +
             "All processing stays on this computer. DOC/DOCX conversion requires Microsoft Word desktop automation. Existing signatures, forms, attachments, layers, tagged structure, and PDF/A or PDF/UA conformance are not guaranteed after merging. Always review generated files before distribution.\r\n\r\n" +
+            "Open-source license\r\n" +
+            "Copyright © 2026 yaosio232. PDF Forge is licensed under GNU AGPL v3. You may use, modify, and redistribute it under that license. This software comes with no warranty.\r\n" +
+            "Source code: https://github.com/yaosio232/pdf-forge\r\n" +
+            "Full license: https://github.com/yaosio232/pdf-forge/blob/main/LICENSE.md\r\n" +
+            "Third-party notices: https://github.com/yaosio232/pdf-forge/blob/main/NOTICE.md\r\n" +
+            "The PDF engine iTextSharp 5.5.13.4 is dual-licensed under AGPLv3/commercial terms; BouncyCastle.Cryptography is MIT-licensed.\r\n\r\n" +
             "Log\r\n" +
             "Each operation writes PDF_Forge_Error_Log.txt next to the selected output PDF."));
         languageTabs.TabPages.Add(chineseTab);
