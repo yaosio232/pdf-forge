@@ -10,6 +10,16 @@ namespace Pdf_Merger.Tests;
 public sealed class PdfMergeServiceTests
 {
     [Fact]
+    public void MiddleMousePan_moves_scroll_opposite_to_the_pointer_drag()
+    {
+        var position = ScrollAwarePanel.CalculatePanPosition(
+            new System.Drawing.Point(100, 200), new System.Drawing.Point(20, 30),
+            new System.Drawing.Point(35, 5));
+
+        Assert.Equal(new System.Drawing.Point(85, 225), position);
+    }
+
+    [Fact]
     public void Merge_preserves_source_order_and_page_count()
     {
         using var fixture = new TempFixture();
@@ -244,6 +254,43 @@ public sealed class PdfMergeServiceTests
         Assert.True(result.Succeeded, result.ErrorMessage);
         Assert.Equal(new[] { "AAA.pdf", "BBB.pdf" },
             result.Parts.Select(part => System.IO.Path.GetFileName(part.OutputPath)));
+    }
+
+    [Fact]
+    public void SavePart_writes_only_the_requested_page_range_without_modifying_source()
+    {
+        using var fixture = new TempFixture();
+        var source = fixture.CreatePdf("SINGLE_PART", 40);
+        var output = fixture.PathFor("downloads", "chapter.pdf");
+        var before = File.ReadAllBytes(source);
+
+        var result = new PdfSplitService().SavePart(source, 15, 21, output);
+
+        Assert.True(result.Succeeded, result.ErrorMessage);
+        var part = Assert.Single(result.Parts);
+        Assert.Equal(output, part.OutputPath);
+        Assert.Equal(15, part.FirstPage);
+        Assert.Equal(21, part.LastPage);
+        Assert.Equal(7, part.PageCount);
+        Assert.Equal(before, File.ReadAllBytes(source));
+        using var reader = new PdfReader(output);
+        Assert.Equal(7, reader.NumberOfPages);
+        Assert.Contains("SINGLE_PART PAGE 15", PdfTextExtractor.GetTextFromPage(reader, 1));
+        Assert.Contains("SINGLE_PART PAGE 21", PdfTextExtractor.GetTextFromPage(reader, 7));
+    }
+
+    [Fact]
+    public void SavePart_rejects_output_equal_to_source_without_modifying_source()
+    {
+        using var fixture = new TempFixture();
+        var source = fixture.CreatePdf("KEEP_SINGLE_PART_SOURCE", 20);
+        var before = File.ReadAllBytes(source);
+
+        var result = new PdfSplitService().SavePart(source, 4, 9, source);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("same as the source", result.ErrorMessage);
+        Assert.Equal(before, File.ReadAllBytes(source));
     }
 
     [Fact]

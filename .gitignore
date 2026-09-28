@@ -16,3 +16,4 @@ PDF_Forge_Error_Log.txt
 Pdf_Merger.exe
 tests/*.pdf
 tests/*.png
+tests/Unlocked/

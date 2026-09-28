@@ -10,9 +10,9 @@
     <AssemblyName>PDF Forge</AssemblyName>
     <Product>PDF Forge</Product>
     <AssemblyTitle>PDF Forge</AssemblyTitle>
-    <Version>1.0.1</Version>
-    <FileVersion>1.0.1.0</FileVersion>
-    <InformationalVersion>1.0.1</InformationalVersion>
+    <Version>1.0.2</Version>
+    <FileVersion>1.0.2.0</FileVersion>
+    <InformationalVersion>1.0.2</InformationalVersion>
     <BuildDate>$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd'))</BuildDate>
     <Platforms>AnyCPU;x64</Platforms>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

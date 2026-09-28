@@ -124,6 +124,70 @@ public sealed class PdfSplitService
         }
     }
 
+    public SplitResult SavePart(string sourcePath, int firstPage, int lastPage, string outputPath)
+    {
+        var normalizedSource = Path.GetFullPath(sourcePath);
+        var normalizedOutput = Path.GetFullPath(outputPath);
+        var temporaryPath = $"{normalizedOutput}.{Guid.NewGuid():N}.tmp";
+
+        try
+        {
+            ValidateSource(normalizedSource);
+            if (PathsEqual(normalizedSource, normalizedOutput))
+            {
+                return Failure(normalizedSource, "The output path cannot be the same as the source file.");
+            }
+
+            var outputDirectory = Path.GetDirectoryName(normalizedOutput);
+            if (string.IsNullOrWhiteSpace(outputDirectory))
+            {
+                return Failure(normalizedSource, "Choose a valid output folder.");
+            }
+
+            Directory.CreateDirectory(outputDirectory);
+            using var reader = new PdfReader(normalizedSource);
+            if (reader.IsEncrypted())
+            {
+                return Failure(normalizedSource, "Encrypted PDFs are not supported.");
+            }
+
+            if (firstPage <= 0 || lastPage < firstPage || lastPage > reader.NumberOfPages)
+            {
+                return Failure(normalizedSource,
+                    $"Choose a page range between 1 and {reader.NumberOfPages}.");
+            }
+
+            WriteRange(reader, firstPage, lastPage, temporaryPath);
+            MetadataSanitizer.Sanitize(temporaryPath);
+            ValidatePdf(temporaryPath);
+            AtomicReplace(temporaryPath, normalizedOutput);
+            temporaryPath = string.Empty;
+
+            var part = new SplitPart(normalizedOutput, firstPage, lastPage, lastPage - firstPage + 1);
+            Logger.SetOutputPath(normalizedOutput);
+            Logger.LogInfo($"Saved split part for pages {firstPage}-{lastPage}.");
+            return new SplitResult
+            {
+                Succeeded = true,
+                SourcePath = normalizedSource,
+                Parts = new[] { part }
+            };
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError($"Saving pages {firstPage}-{lastPage} from '{normalizedSource}' failed.", exception);
+            return new SplitResult
+            {
+                SourcePath = normalizedSource,
+                ErrorMessage = GetFriendlyMessage(exception)
+            };
+        }
+        finally
+        {
+            DeleteIfExists(temporaryPath);
+        }
+    }
+
     public static int GetPageCount(string sourcePath)
     {
         var normalizedSource = Path.GetFullPath(sourcePath);

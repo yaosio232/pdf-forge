@@ -76,6 +76,7 @@ public partial class Form1 : Form
     private System.Windows.Forms.Timer? splitLargePreviewTimer;
     private Bitmap? splitLargePreviewImage;
     private int splitLargePreviewImagePage;
+    private bool splitScrollToBottomAfterPreviewLoad;
     private bool isProcessing;
     private bool isDragOver;
     private bool isSplitDragOver;
@@ -1837,7 +1838,7 @@ public partial class Form1 : Form
         splitLargePageIndex = new ScrollAwarePanel
         {
             Dock = DockStyle.Fill,
-            AutoScroll = false,
+            AutoScroll = true,
             BackColor = ViewerSurface,
             TabIndex = 1,
             TabStop = true,
@@ -1892,15 +1893,19 @@ public partial class Form1 : Form
             return;
         }
 
+        var pageSize = GetLargePageSize(splitLargePageIndex);
+        splitLargePageIndex.AutoScrollMinSize = splitZoomPercent > 100
+            ? new Size(pageSize.Width + 64, pageSize.Height + 86)
+            : Size.Empty;
         splitLargePageIndex.Invalidate();
     }
 
     private const int LargeSplitRowHeight = 860;
 
-    private Rectangle GetLargePageBounds(Panel panel)
+    private Size GetLargePageSize(Panel panel)
     {
         var availableWidth = Math.Max(320,
-            panel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 28);
+            panel.ClientSize.Width - 28);
         var availableHeight = Math.Max(240, panel.ClientSize.Height - 86);
         var aspectRatio = splitLargePreviewImage is { Width: > 0, Height: > 0 }
             ? (double)splitLargePreviewImage.Height / splitLargePreviewImage.Width
@@ -1909,11 +1914,18 @@ public partial class Form1 : Form
         var pageWidth = Math.Max(180,
             (int)Math.Round(fitWidth * splitZoomPercent / 100D));
         var pageHeight = Math.Max(180, (int)Math.Round(pageWidth * aspectRatio));
+        return new Size(pageWidth, pageHeight);
+    }
+
+    private Rectangle GetLargePageBounds(Panel panel)
+    {
+        var pageSize = GetLargePageSize(panel);
+        var contentWidth = Math.Max(panel.ClientSize.Width, panel.AutoScrollMinSize.Width);
         return new Rectangle(
-            Math.Max(14, (availableWidth - pageWidth) / 2),
-            42,
-            pageWidth,
-            pageHeight);
+            Math.Max(14, (contentWidth - pageSize.Width) / 2) + panel.AutoScrollPosition.X,
+            42 + panel.AutoScrollPosition.Y,
+            pageSize.Width,
+            pageSize.Height);
     }
 
     private void LargeSplitPageIndex_Paint(object? sender, PaintEventArgs e)
@@ -1932,7 +1944,10 @@ public partial class Form1 : Form
         using var pageFont = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
 
         var page = splitCurrentPage;
-        TextRenderer.DrawText(e.Graphics, "Scroll to browse pages · use the sidebar scissors to add a split",
+        var viewerHint = splitZoomPercent > 100
+            ? "Use the scroll bars or hold the middle mouse button and drag to pan"
+            : "Scroll to browse pages · use the sidebar scissors to add a split";
+        TextRenderer.DrawText(e.Graphics, viewerHint,
             Font, new Rectangle(0, 10, panel.ClientSize.Width, 24), Subtle,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         e.Graphics.FillRectangle(shadow,
@@ -1956,6 +1971,25 @@ public partial class Form1 : Form
             return;
         }
 
+        if (splitZoomPercent > 100)
+        {
+            var verticalScroll = splitLargePageIndex?.VerticalScroll;
+            if (verticalScroll is null)
+            {
+                return;
+            }
+
+            var maximum = Math.Max(verticalScroll.Minimum,
+                verticalScroll.Maximum - verticalScroll.LargeChange + 1);
+            var atBoundary = e.Delta < 0
+                ? verticalScroll.Value >= maximum
+                : verticalScroll.Value <= verticalScroll.Minimum;
+            if (!atBoundary)
+            {
+                return;
+            }
+        }
+
         var pageDelta = Math.Max(1, Math.Abs(e.Delta) / SystemInformation.MouseWheelScrollDelta);
         var nextPage = Math.Clamp(
             splitCurrentPage + (e.Delta < 0 ? pageDelta : -pageDelta),
@@ -1966,7 +2000,19 @@ public partial class Form1 : Form
             return;
         }
 
+        var showBottom = e.Delta > 0;
+        splitScrollToBottomAfterPreviewLoad = showBottom;
         SelectSplitPage(nextPage);
+        if (splitLargePageIndex is not null)
+        {
+            var x = Math.Abs(splitLargePageIndex.AutoScrollPosition.X);
+            var y = showBottom
+                ? Math.Max(splitLargePageIndex.VerticalScroll.Minimum,
+                    splitLargePageIndex.VerticalScroll.Maximum -
+                    splitLargePageIndex.VerticalScroll.LargeChange + 1)
+                : 0;
+            splitLargePageIndex.AutoScrollPosition = new Point(x, y);
+        }
     }
 
     private void LargeSplitPageIndex_MouseClick(object? sender, MouseEventArgs e)
@@ -2265,6 +2311,22 @@ public partial class Form1 : Form
         UpdateSplitThumbnailSelection();
     }
 
+    private void NavigateToSplitPart(int firstPage)
+    {
+        splitScrollToBottomAfterPreviewLoad = false;
+        if (splitLargePageIndex is not null)
+        {
+            splitLargePageIndex.AutoScrollPosition = Point.Empty;
+        }
+
+        SelectSplitPage(firstPage);
+        if (splitLargePageIndex is not null)
+        {
+            splitLargePageIndex.AutoScrollPosition = Point.Empty;
+            splitLargePageIndex.Focus();
+        }
+    }
+
     private void DrawLargePagePreview(Graphics graphics, int page, Rectangle pageRect)
     {
         var previewRect = new Rectangle(pageRect.Left + 16, pageRect.Top + 32,
@@ -2500,6 +2562,17 @@ public partial class Form1 : Form
             splitLargePreviewImage = new Bitmap(sourceImage);
             splitLargePreviewImagePage = page;
             RefreshSplitThumbnail(page, path);
+            ResizeLargeSplitPageIndex();
+            if (splitScrollToBottomAfterPreviewLoad && splitLargePageIndex is not null &&
+                page == splitCurrentPage)
+            {
+                var x = Math.Abs(splitLargePageIndex.AutoScrollPosition.X);
+                var y = Math.Max(splitLargePageIndex.VerticalScroll.Minimum,
+                    splitLargePageIndex.VerticalScroll.Maximum -
+                    splitLargePageIndex.VerticalScroll.LargeChange + 1);
+                splitLargePageIndex.AutoScrollPosition = new Point(x, y);
+                splitScrollToBottomAfterPreviewLoad = false;
+            }
         }
         catch (Exception exception)
         {
@@ -2662,6 +2735,77 @@ public partial class Form1 : Form
         _ = SaveSplitAsync(source, splitPoints, partNames, dialog.FileName);
     }
 
+    private async Task DownloadSplitPartAsync(int firstPage, int lastPage, string requestedName,
+        Button downloadButton)
+    {
+        if (isProcessing || string.IsNullOrWhiteSpace(splitSourceFile))
+        {
+            return;
+        }
+
+        var fileName = string.IsNullOrWhiteSpace(requestedName)
+            ? $"part_{firstPage:00}-{lastPage:00}"
+            : Path.GetFileNameWithoutExtension(requestedName.Trim());
+        foreach (var invalidCharacter in Path.GetInvalidFileNameChars())
+        {
+            fileName = fileName.Replace(invalidCharacter, '_');
+        }
+        if (string.IsNullOrWhiteSpace(fileName) || fileName is "." or "..")
+        {
+            fileName = $"part_{firstPage:00}-{lastPage:00}";
+        }
+
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "PDF files (*.pdf)|*.pdf",
+            DefaultExt = "pdf",
+            AddExtension = true,
+            FileName = $"{fileName}.pdf",
+            Title = $"Download pages {firstPage}-{lastPage}"
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            RestoreMaximizedWindow();
+            return;
+        }
+        RestoreMaximizedWindow();
+
+        var source = splitSourceFile;
+        SetSplitProcessing(true);
+        downloadButton.Text = "Saving…";
+        splitStatusLabel.Text = $"Saving pages {firstPage}-{lastPage}…";
+        try
+        {
+            var result = await Task.Run(() =>
+                splitService.SavePart(source, firstPage, lastPage, dialog.FileName));
+            if (!result.Succeeded)
+            {
+                MessageBox.Show(result.ErrorMessage ?? "This part could not be saved.", "Download failed",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                splitStatusLabel.Text = "Download failed. Original PDF unchanged.";
+                return;
+            }
+
+            splitStatusLabel.Text = $"Saved pages {firstPage}-{lastPage}. Original PDF unchanged.";
+            MessageBox.Show($"Created {Path.GetFileName(dialog.FileName)}", "Download complete",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError("Unexpected single-part download error.", exception);
+            MessageBox.Show(exception.Message, "Download failed", MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            splitStatusLabel.Text = "Download failed. Please try again.";
+        }
+        finally
+        {
+            downloadButton.Text = "Download";
+            SetSplitProcessing(false);
+            UpdateSplitStatus();
+            RestoreMaximizedWindow();
+        }
+    }
+
     private async Task SaveSplitAsync(string source, IReadOnlyCollection<int> splitPoints,
         IReadOnlyList<string> partNames, string outputBasePath)
     {
@@ -2698,8 +2842,16 @@ public partial class Form1 : Form
 
     private void SetSplitProcessing(bool processing)
     {
+        isProcessing = processing;
+        modeTabs.Enabled = !processing;
         splitChooseButton.Enabled = !processing;
         splitSaveButton.Enabled = !processing && splitPageCount > 0;
+        foreach (var button in splitPartsSummaryCards.Controls
+                     .Cast<Control>()
+                     .SelectMany(card => card.Controls.OfType<Button>()))
+        {
+            button.Enabled = !processing;
+        }
     }
 
     private void UpdateSplitStatus()
@@ -2717,6 +2869,7 @@ public partial class Form1 : Form
             splitPageStatusLabel.Text = $"Page {splitCurrentPage}/{splitPageCount} · {splitAfterPages.Count} split(s)";
             var statusIsOutcome = splitStatusLabel.Text.StartsWith("Saved", StringComparison.Ordinal) ||
                                   splitStatusLabel.Text.StartsWith("Split failed", StringComparison.Ordinal) ||
+                                  splitStatusLabel.Text.StartsWith("Download failed", StringComparison.Ordinal) ||
                                   splitStatusLabel.Text.StartsWith("Could not", StringComparison.Ordinal);
             if (!statusIsOutcome)
             {
@@ -2747,6 +2900,8 @@ public partial class Form1 : Form
             return;
         }
 
+        var previousScrollY = Math.Max(splitPartsSummaryCards.VerticalScroll.Value,
+            Math.Abs(splitPartsSummaryCards.AutoScrollPosition.Y));
         var partRanges = new List<(int Start, int End)>();
         var startPage = 1;
         foreach (var cutPage in splitAfterPages.OrderBy(page => page))
@@ -2788,21 +2943,23 @@ public partial class Form1 : Form
             }
             var card = new Panel
             {
-                Height = 104,
+                Height = 112,
                 Width = Math.Max(1, splitPartsSummaryCards.ClientSize.Width - 8),
                 BackColor = Color.White,
                 Margin = new Padding(0, 0, 0, 8),
                 Padding = new Padding(12, 8, 12, 8),
                 AccessibleName = $"Split part {part.Index}, pages {part.Start} to {part.End}"
             };
+            var cardHovered = false;
             card.Paint += (_, e) => ControlPaint.DrawBorder(e.Graphics, card.ClientRectangle,
-                Border, ButtonBorderStyle.Solid);
+                cardHovered ? Primary : Border, ButtonBorderStyle.Solid);
             var partLabel = new Label
             {
                 Dock = DockStyle.Top,
-                Height = 21,
+                Height = 30,
                 Font = new Font("Segoe UI Semibold", 8.5F, FontStyle.Bold),
                 ForeColor = Primary,
+                Padding = new Padding(0, 0, 86, 0),
                 Text = $"PART {part.Index}",
                 TextAlign = ContentAlignment.MiddleLeft
             };
@@ -2822,6 +2979,23 @@ public partial class Form1 : Form
             nameInput.Enter += (_, _) => nameInput.BackColor = Color.FromArgb(239, 246, 255);
             nameInput.Leave += (_, _) => nameInput.BackColor = Color.White;
             nameInput.TextChanged += (_, _) => splitPartNames[rangeKey] = nameInput.Text;
+            var downloadButton = new Button
+            {
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Location = new Point(card.Width - 92, 4),
+                Size = new Size(80, 24),
+                FlatStyle = FlatStyle.Flat,
+                FlatAppearance = { BorderColor = Border },
+                BackColor = PrimarySoft,
+                ForeColor = Primary,
+                Font = new Font("Segoe UI Semibold", 8F, FontStyle.Bold),
+                Text = "Download",
+                AccessibleName = $"Download split part {part.Index}, pages {part.Start} to {part.End}",
+                UseVisualStyleBackColor = false,
+                TabIndex = 1
+            };
+            downloadButton.Click += async (_, _) =>
+                await DownloadSplitPartAsync(part.Start, part.End, nameInput.Text, downloadButton);
             var countLabel = new Label
             {
                 Dock = DockStyle.Fill,
@@ -2831,14 +3005,51 @@ public partial class Form1 : Form
                 TextAlign = ContentAlignment.MiddleLeft,
                 AutoEllipsis = false
             };
+            void NavigateToPart() => NavigateToSplitPart(part.Start);
+            void SetCardHover(bool hovered)
+            {
+                cardHovered = hovered;
+                card.BackColor = hovered ? PrimarySoft : Color.White;
+                card.Invalidate();
+            }
+            void RefreshCardHover()
+            {
+                SetCardHover(card.ClientRectangle.Contains(card.PointToClient(Cursor.Position)));
+            }
+
+            card.Cursor = Cursors.Hand;
+            partLabel.Cursor = Cursors.Hand;
+            countLabel.Cursor = Cursors.Hand;
+            card.Click += (_, _) => NavigateToPart();
+            partLabel.Click += (_, _) => NavigateToPart();
+            countLabel.Click += (_, _) => NavigateToPart();
+            card.MouseEnter += (_, _) => SetCardHover(true);
+            card.MouseLeave += (_, _) => RefreshCardHover();
             card.Controls.Add(countLabel);
             card.Controls.Add(nameInput);
             card.Controls.Add(partLabel);
+            card.Controls.Add(downloadButton);
+            foreach (Control child in card.Controls)
+            {
+                child.MouseEnter += (_, _) => SetCardHover(true);
+                child.MouseLeave += (_, _) => RefreshCardHover();
+            }
+            downloadButton.BringToFront();
             splitPartsSummaryCards.Controls.Add(card);
         }
 
         ResizeSplitResultCards();
         splitPartsSummaryCards.ResumeLayout(true);
+        if (previousScrollY > 0 && splitPartsSummaryCards.IsHandleCreated)
+        {
+            splitPartsSummaryCards.BeginInvoke(new Action(() =>
+            {
+                if (!splitPartsSummaryCards.IsDisposed)
+                {
+                    splitPartsSummaryCards.AutoScrollPosition = new Point(0, previousScrollY);
+                }
+            }));
+        }
         splitSaveButton.Text = partRanges.Count == 1
             ? "Save 1 split PDF"
             : $"Save {partRanges.Count} split PDFs";
@@ -3530,6 +3741,7 @@ public partial class Form1 : Form
     private void SetProcessing(bool processing)
     {
         isProcessing = processing;
+        modeTabs.Enabled = !processing;
         btnMerge.Text = processing ? "Merging…" : "Merge PDF";
         btnDisclaimer.Enabled = !processing;
         btnChooseFiles.Enabled = !processing;
@@ -3686,14 +3898,14 @@ public partial class Form1 : Form
             "PDF Forge\r\n\r\n" +
             "A local-first utility for splitting, combining, reviewing, and batch-unlocking PDF files.\r\n\r\n" +
             "Split PDF\r\n" +
-            "Open a PDF, browse pages in the center viewer, and click a scissors icon to add or remove a split point.\r\n" +
-            "Each result card shows an editable output name, the exact page range, and the page count.\r\n\r\n" +
+            "Open a PDF, browse pages in the center viewer, and click a scissors icon to add or remove a split point. Download one part from its card or save every part together.\r\n" +
+            "Each result card shows an editable output name, the exact page range, and the page count. Click the card to jump to its first page.\r\n\r\n" +
             "Merge PDFs\r\n" +
             "Drop PDF, DOC, or DOCX files into the drop zone, arrange their order, then choose Merge PDFs to save the result.\r\n\r\n" +
             "Unlock PDFs\r\n" +
             "Choose multiple PDFs, enter their shared known password, and select an output folder. PDF Forge does not guess or crack passwords, and it never overwrites source files.\r\n\r\n" +
             "Navigation\r\n" +
-            "Use the mouse wheel, the page field, or the Up/Down keys to move through pages. Thumbnails are loaded in the background.\r\n\r\n" +
+            "Use the mouse wheel, the page field, or the Up/Down keys to move through pages. When zoomed in, use the scroll bars or hold the middle mouse button and drag. Thumbnails are loaded in the background.\r\n\r\n" +
             "Notes\r\n" +
             "All processing stays on this computer. DOC/DOCX conversion requires Microsoft Word desktop automation. Existing signatures, forms, attachments, layers, tagged structure, and PDF/A or PDF/UA conformance are not guaranteed after merging. Always review generated files before distribution.\r\n\r\n" +
             "Open-source license\r\n" +
