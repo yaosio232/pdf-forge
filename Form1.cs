@@ -38,7 +38,10 @@ public partial class Form1 : Form
     private Label splitSummaryNumber = null!;
     private Label splitSummaryCaption = null!;
     private Label splitPartsSummaryHeader = null!;
+    private Panel splitResultsSidebar = null!;
     private FlowLayoutPanel splitPartsSummaryCards = null!;
+    private int splitResultsScrollRestoreGeneration;
+    private bool restoringSplitResultsScroll;
     private Label? splitPreviewEmptyState;
     private Label? splitThumbnailTitle;
     private Label? splitThumbnailCountLabel;
@@ -1177,7 +1180,7 @@ public partial class Form1 : Form
         workspace.Controls.Add(splitBrowserPanel);
         workspace.Controls.Add(toolbar);
 
-        var sidebar = new Panel { Dock = DockStyle.Fill, BackColor = Surface, AutoScroll = true,
+        splitResultsSidebar = new Panel { Dock = DockStyle.Fill, BackColor = Surface, AutoScroll = true,
             Padding = new Padding(12, 0, 0, 0) };
 
         var summary = new Panel
@@ -1281,16 +1284,18 @@ public partial class Form1 : Form
             BackColor = Surface
         };
         splitPartsSummaryCards.Resize += (_, _) => ResizeSplitResultCards();
+        splitPartsSummaryCards.Scroll += (_, _) => CancelPendingSplitResultsScrollRestore();
         splitPartsSummaryCards.Controls.Add(CreateSplitResultEmptyState());
         partsSummary.Controls.Add(splitPartsSummaryCards);
         partsSummary.Controls.Add(splitPartsSummaryHeader);
 
-        sidebar.Controls.Add(actions);
-        sidebar.Controls.Add(partsSummary);
+        splitResultsSidebar.Controls.Add(actions);
+        splitResultsSidebar.Controls.Add(partsSummary);
+        splitResultsSidebar.Scroll += (_, _) => CancelPendingSplitResultsScrollRestore();
         var thumbnailSidebar = BuildSplitThumbnailSidebar();
         splitLayout.Controls.Add(thumbnailSidebar, 0, 0);
         splitLayout.Controls.Add(workspace, 1, 0);
-        splitLayout.Controls.Add(sidebar, 2, 0);
+        splitLayout.Controls.Add(splitResultsSidebar, 2, 0);
 
         foreach (var control in new Control[] { workspace, toolbar, toolbarLayout, splitFileLabel, splitStatusLabel })
         {
@@ -2276,7 +2281,7 @@ public partial class Form1 : Form
         UpdateSplitStatus();
     }
 
-    private void SelectSplitPage(int page)
+    private void SelectSplitPage(int page, bool immediatePreview = false)
     {
         if (page <= 0 || page > splitPageCount)
         {
@@ -2293,7 +2298,7 @@ public partial class Form1 : Form
         if (splitLargePageIndex is not null)
         {
             splitLargePageIndex.Invalidate();
-            RequestLargePagePreview(page);
+            RequestLargePagePreview(page, immediatePreview);
         }
         foreach (Control control in splitPageStack.Controls)
         {
@@ -2319,7 +2324,8 @@ public partial class Form1 : Form
             splitLargePageIndex.AutoScrollPosition = Point.Empty;
         }
 
-        SelectSplitPage(firstPage);
+        Logger.LogInfo($"Navigating from split part card to page {firstPage}.");
+        SelectSplitPage(firstPage, immediatePreview: true);
         if (splitLargePageIndex is not null)
         {
             splitLargePageIndex.AutoScrollPosition = Point.Empty;
@@ -2381,7 +2387,7 @@ public partial class Form1 : Form
             return;
         }
 
-        if (page == splitLargePreviewRequestedPage &&
+        if (!immediate && page == splitLargePreviewRequestedPage &&
             (splitLargePreviewTimer?.Enabled == true || splitLargePreviewRequestId > 0))
         {
             return;
@@ -2900,7 +2906,9 @@ public partial class Form1 : Form
             return;
         }
 
-        var previousScrollY = Math.Max(splitPartsSummaryCards.VerticalScroll.Value,
+        var previousSidebarScrollY = Math.Max(splitResultsSidebar.VerticalScroll.Value,
+            Math.Abs(splitResultsSidebar.AutoScrollPosition.Y));
+        var previousCardsScrollY = Math.Max(splitPartsSummaryCards.VerticalScroll.Value,
             Math.Abs(splitPartsSummaryCards.AutoScrollPosition.Y));
         var partRanges = new List<(int Start, int End)>();
         var startPage = 1;
@@ -3040,20 +3048,61 @@ public partial class Form1 : Form
 
         ResizeSplitResultCards();
         splitPartsSummaryCards.ResumeLayout(true);
-        if (previousScrollY > 0 && splitPartsSummaryCards.IsHandleCreated)
-        {
-            splitPartsSummaryCards.BeginInvoke(new Action(() =>
-            {
-                if (!splitPartsSummaryCards.IsDisposed)
-                {
-                    splitPartsSummaryCards.AutoScrollPosition = new Point(0, previousScrollY);
-                }
-            }));
-        }
+        RestoreSplitResultsScrollPosition(previousSidebarScrollY, previousCardsScrollY);
         splitSaveButton.Text = partRanges.Count == 1
             ? "Save 1 split PDF"
             : $"Save {partRanges.Count} split PDFs";
         splitSaveButton.AccessibleName = splitSaveButton.Text;
+    }
+
+    private void RestoreSplitResultsScrollPosition(int sidebarY, int cardsY)
+    {
+        var generation = ++splitResultsScrollRestoreGeneration;
+
+        void Restore()
+        {
+            if (generation != splitResultsScrollRestoreGeneration)
+            {
+                return;
+            }
+
+            restoringSplitResultsScroll = true;
+            try
+            {
+                if (!splitResultsSidebar.IsDisposed && sidebarY > 0)
+                {
+                    splitResultsSidebar.AutoScrollPosition = new Point(0, sidebarY);
+                }
+
+                if (!splitPartsSummaryCards.IsDisposed && cardsY > 0)
+                {
+                    splitPartsSummaryCards.AutoScrollPosition = new Point(0, cardsY);
+                }
+            }
+            finally
+            {
+                restoringSplitResultsScroll = false;
+            }
+        }
+
+        Restore();
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        BeginInvoke(new Action(() =>
+        {
+            Restore();
+        }));
+    }
+
+    private void CancelPendingSplitResultsScrollRestore()
+    {
+        if (!restoringSplitResultsScroll)
+        {
+            splitResultsScrollRestoreGeneration++;
+        }
     }
 
     private IReadOnlyList<string> GetSplitPartNamesForSave()
