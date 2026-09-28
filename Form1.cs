@@ -2278,7 +2278,7 @@ public partial class Form1 : Form
         }
 
         splitLargePageIndex?.Invalidate();
-        UpdateSplitStatus();
+        UpdateSplitStatus(scrollThumbnailIntoView: false);
     }
 
     private void SelectSplitPage(int page, bool immediatePreview = false)
@@ -2860,7 +2860,7 @@ public partial class Form1 : Form
         }
     }
 
-    private void UpdateSplitStatus()
+    private void UpdateSplitStatus(bool scrollThumbnailIntoView = true)
     {
         splitSummaryNumber.Text = splitPageCount.ToString();
         splitSummaryCaption.Text = splitPageCount == 1 ? "PDF page loaded" : "PDF pages loaded";
@@ -2881,7 +2881,10 @@ public partial class Form1 : Form
             {
                 splitStatusLabel.Text = $"{splitPageStatusLabel.Text} · Click a scissors icon to add or remove a cut.";
             }
-            UpdateSplitThumbnailSelection();
+            if (scrollThumbnailIntoView)
+            {
+                UpdateSplitThumbnailSelection();
+            }
         }
     }
 
