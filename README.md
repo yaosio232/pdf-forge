@@ -42,7 +42,18 @@ dotnet test .\Pdf_Merger.sln --no-build --logger "console;verbosity=minimal"
 dotnet publish .\Pdf_Merger.csproj -c Release -r win-x64 --self-contained
 ```
 
-發佈產物由 .NET 放在 `bin/Release/` 下的 `publish` 目錄；`dist/` 是專案另行整理交付檔案時使用的目錄，不納入 Git。正式可攜 ZIP 還必須在 EXE 旁放入 Poppler Windows x64 完整相依檔，結構為 `poppler/Library/bin/pdftoppm.exe`；只發佈裸 EXE 不包含 Split Preview renderer。
+發佈產物由 .NET 放在 `bin/Release/` 下的 `publish` 目錄；`dist/` 是專案另行整理交付檔案時使用的目錄，不納入 Git。正式可攜 ZIP 必須使用 `scripts/Publish-Portable.ps1` 建立，並明確提供 Poppler runtime、解開後的 conda package `info` 目錄與 upstream source archive：
+
+```powershell
+.\scripts\Publish-Portable.ps1 `
+  -PopplerRoot C:\path\to\poppler `
+  -PopplerPackageInfoDirectory C:\path\to\expanded\info `
+  -PopplerSourceArchive C:\path\to\poppler-26.07.0.tar.xz `
+  -PopplerPackageArchive C:\path\to\poppler-26.07.0-h6618ce5_3.conda `
+  -BuildDate 2026-09-29
+```
+
+腳本固定使用 .NET SDK 8.0.409，並驗證 Poppler runtime、package/source SHA-256、授權、feedstock revision、recipe 與 Windows patches；任何項目不符都會直接失敗。`BuildDate` 同時固定 EXE metadata 與 ZIP entry timestamps。只執行 `dotnet publish` 產生的裸 EXE 不包含 Split Preview renderer。
 
 ## 開源授權
 

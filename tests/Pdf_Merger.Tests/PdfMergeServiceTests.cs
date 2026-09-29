@@ -10,6 +10,18 @@ namespace Pdf_Merger.Tests;
 public sealed class PdfMergeServiceTests
 {
     [Fact]
+    public void Preview_renderer_candidates_are_only_app_local()
+    {
+        var candidates = PdfPageRenderer.GetRendererCandidates(@"C:\Portable\PDF Forge");
+
+        Assert.Equal(new[]
+        {
+            @"C:\Portable\PDF Forge\pdftoppm.exe",
+            @"C:\Portable\PDF Forge\poppler\Library\bin\pdftoppm.exe"
+        }, candidates);
+    }
+
+    [Fact]
     public void MiddleMousePan_moves_scroll_opposite_to_the_pointer_drag()
     {
         var position = ScrollAwarePanel.CalculatePanPosition(

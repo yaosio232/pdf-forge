@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace Pdf_Merger;
 
 /// <summary>
-/// Uses the local Poppler renderer when available for the split-page browser.
+/// Uses the Poppler renderer shipped beside the application for the split-page browser.
 /// The split workflow remains usable without rendered previews.
 /// </summary>
 public static class PdfPageRenderer
@@ -115,29 +115,7 @@ public static class PdfPageRenderer
 
     private static string? FindRenderer()
     {
-        var candidates = new List<string>
-        {
-            Path.Combine(AppContext.BaseDirectory, "pdftoppm.exe"),
-            Path.Combine(AppContext.BaseDirectory, "poppler", "Library", "bin", "pdftoppm.exe")
-        };
-
-        var pathValue = Environment.GetEnvironmentVariable("PATH");
-        if (!string.IsNullOrWhiteSpace(pathValue))
-        {
-            candidates.AddRange(pathValue.Split(Path.PathSeparator,
-                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(directory => Path.Combine(directory, "pdftoppm.exe")));
-        }
-
-        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrWhiteSpace(userProfile))
-        {
-            candidates.Add(Path.Combine(userProfile, ".cache", "codex-runtimes",
-                "codex-primary-runtime", "dependencies", "native", "poppler", "Library", "bin",
-                "pdftoppm.exe"));
-        }
-
-        foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var candidate in GetRendererCandidates(AppContext.BaseDirectory))
         {
             try
             {
@@ -154,4 +132,11 @@ public static class PdfPageRenderer
 
         return null;
     }
+
+    internal static IReadOnlyList<string> GetRendererCandidates(string baseDirectory) =>
+        new[]
+        {
+            Path.Combine(baseDirectory, "pdftoppm.exe"),
+            Path.Combine(baseDirectory, "poppler", "Library", "bin", "pdftoppm.exe")
+        };
 }

@@ -43,15 +43,22 @@ PDF Merger 是 Windows 桌面工具。使用者把 PDF、DOC 或 DOCX 拖入清�
 | 目標平台 | `win-x64` |
 | PDF 引擎 | iTextSharp 5.5.13.4 |
 | 記錄套件 | Microsoft.Extensions.Logging 8.0.0 與 Abstractions 8.0.0；目前程式未實際呼叫這兩個套件，而是使用自製 `Logger` |
-| 發佈 | Self-contained、single-file、未 trimming |
+| 發佈 | Self-contained、single-file、未 trimming；正式交付以 portable ZIP 封裝 Poppler |
 | Word 轉換 | Microsoft Word COM Automation，需安裝可自動化的桌面版 Word |
 | 應用圖示 | `Resources/pdfMeld.ico`，同時設定為 ApplicationIcon 與 EmbeddedResource |
 
-專案檔註解提供的發佈方式：
+正式可攜版使用專案封裝腳本，明確指定 Poppler runtime、conda package metadata 與對應 upstream source：
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
+.\scripts\Publish-Portable.ps1 `
+  -PopplerRoot C:\path\to\poppler `
+  -PopplerPackageInfoDirectory C:\path\to\expanded\info `
+  -PopplerSourceArchive C:\path\to\poppler-26.07.0.tar.xz `
+  -PopplerPackageArchive C:\path\to\poppler-26.07.0-h6618ce5_3.conda `
+  -BuildDate 2026-09-29
 ```
+
+單獨執行 `dotnet publish` 只會建立 .NET 自包含 EXE，不會包含 Split Preview 使用的 Poppler；不得直接把裸 EXE 當作完整可攜版。
 
 ### 3.1 目前建置基線
 
