@@ -2,7 +2,7 @@
 
 PDF Forge 是 Windows 桌面 PDF 工具。你可以用它預覽並分割 PDF、依指定順序合併文件，或在知道密碼的情況下批次產生未加密的 PDF 副本。檔案在本機處理。
 
-原始碼公開在 [GitHub](https://github.com/yaosio232/pdf-forge)；Windows 單檔 EXE 可從 [Releases](https://github.com/yaosio232/pdf-forge/releases) 下載。
+原始碼公開在 [GitHub](https://github.com/yaosio232/pdf-forge)；Windows 可攜版 ZIP 可從 [Releases](https://github.com/yaosio232/pdf-forge/releases) 下載。ZIP 內含 PDF 預覽所需的 Poppler，請完整解壓後使用。
 
 ## 可以做什麼
 
@@ -12,7 +12,7 @@ PDF Forge 是 Windows 桌面 PDF 工具。你可以用它預覽並分割 PDF、�
 
 ## 開始使用
 
-在 Windows 上開啟 `PDF Forge.exe`。若你是從原始碼執行，請先安裝 .NET 6 SDK，再於專案目錄執行：
+在 Windows 上完整解壓 Release ZIP，保留 `PDF Forge.exe` 與旁邊的 `poppler` 資料夾，再開啟 `PDF Forge.exe`。單獨複製 EXE 會缺少 Split Preview 所需的 `pdftoppm.exe` 與原生 DLL。若你是從原始碼執行，請先安裝 .NET 6 SDK 與 Poppler，再於專案目錄執行：
 
 ```powershell
 dotnet run --project .\Pdf_Merger.csproj
@@ -36,19 +36,21 @@ dotnet build .\Pdf_Merger.sln --no-restore
 dotnet test .\Pdf_Merger.sln --no-build --logger "console;verbosity=minimal"
 ```
 
-若要建立可交付的單檔執行檔：
+若要建立 .NET 自包含執行檔：
 
 ```powershell
 dotnet publish .\Pdf_Merger.csproj -c Release -r win-x64 --self-contained
 ```
 
-發佈產物由 .NET 放在 `bin/Release/` 下的 `publish` 目錄；`dist/` 是專案另行整理交付檔案時使用的目錄，不納入 Git。
+發佈產物由 .NET 放在 `bin/Release/` 下的 `publish` 目錄；`dist/` 是專案另行整理交付檔案時使用的目錄，不納入 Git。正式可攜 ZIP 還必須在 EXE 旁放入 Poppler Windows x64 完整相依檔，結構為 `poppler/Library/bin/pdftoppm.exe`；只發佈裸 EXE 不包含 Split Preview renderer。
 
 ## 開源授權
 
 PDF Forge 的原始程式碼以 [GNU Affero General Public License v3.0（AGPL-3.0-only）](LICENSE.md) 開源。你可以使用、研究、修改與再散布，但散布修改版或提供網路服務時，須遵守 AGPLv3 的原始碼與授權告知義務。本工具產生或處理的 PDF，不會只因使用本工具而自動套用 AGPLv3。
 
 PDF Forge 使用 [iTextSharp 5.5.13.4](https://www.nuget.org/packages/iTextSharp/5.5.13.4)，它採 AGPLv3／商業授權雙軌；也使用採 MIT 授權的 BouncyCastle.Cryptography。這些相依套件保留各自的著作權與授權條款，詳見 [授權與第三方聲明](NOTICE.md)。本專案不提供保固。
+
+可攜版 ZIP 另附 [Poppler](https://poppler.freedesktop.org/) 26.07.0（GPL-2.0-or-later）及其 Windows 原生相依檔；Windows binary 取自 conda-forge 套件 `poppler=26.07.0=h6618ce5_3`。相關授權與可取得對應原始碼的資訊包含在 ZIP、[NOTICE.md](NOTICE.md) 與 [Poppler 來源說明](licenses/Poppler-26.07.0-SOURCE.md)。
 
 ## 專案文件
 

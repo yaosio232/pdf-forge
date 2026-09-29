@@ -3943,7 +3943,7 @@ public partial class Form1 : Form
             "原始碼：https://github.com/yaosio232/pdf-forge\r\n" +
             "授權全文：https://github.com/yaosio232/pdf-forge/blob/main/LICENSE.md\r\n" +
             "第三方聲明：https://github.com/yaosio232/pdf-forge/blob/main/NOTICE.md\r\n" +
-            "PDF 引擎 iTextSharp 5.5.13.4 採 AGPLv3／商業授權雙軌；BouncyCastle.Cryptography 採 MIT 授權。\r\n\r\n" +
+            "PDF 引擎 iTextSharp 5.5.13.4 採 AGPLv3／商業授權雙軌；BouncyCastle.Cryptography 採 MIT 授權。可攜版的預覽 renderer Poppler 26.07.0 採 GPL-2.0-or-later，完整聲明請見第三方聲明。\r\n\r\n" +
             "記錄\r\n" +
             "每次操作會在選定輸出 PDF 的同一資料夾留下 PDF_Forge_Error_Log.txt。"));
         englishTab.Controls.Add(CreateAboutText(
@@ -3965,7 +3965,7 @@ public partial class Form1 : Form
             "Source code: https://github.com/yaosio232/pdf-forge\r\n" +
             "Full license: https://github.com/yaosio232/pdf-forge/blob/main/LICENSE.md\r\n" +
             "Third-party notices: https://github.com/yaosio232/pdf-forge/blob/main/NOTICE.md\r\n" +
-            "The PDF engine iTextSharp 5.5.13.4 is dual-licensed under AGPLv3/commercial terms; BouncyCastle.Cryptography is MIT-licensed.\r\n\r\n" +
+            "The PDF engine iTextSharp 5.5.13.4 is dual-licensed under AGPLv3/commercial terms; BouncyCastle.Cryptography is MIT-licensed. The portable preview renderer, Poppler 26.07.0, is GPL-2.0-or-later; see the third-party notices for full details.\r\n\r\n" +
             "Log\r\n" +
             "Each operation writes PDF_Forge_Error_Log.txt next to the selected output PDF."));
         languageTabs.TabPages.Add(chineseTab);
