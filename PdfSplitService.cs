@@ -231,6 +231,7 @@ public sealed class PdfSplitService
 
     private static void WriteRange(PdfReader reader, int firstPage, int lastPage, string outputPath)
     {
+        PrepareRangeLinks(reader, firstPage, lastPage);
         using var output = new FileStream(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         var document = new Document();
         var copy = new PdfCopy(document, output);
@@ -246,6 +247,50 @@ public sealed class PdfSplitService
         {
             copy.Close();
             document.Close();
+        }
+    }
+
+    internal static void PrepareRangeLinks(PdfReader reader, int firstPage, int lastPage)
+    {
+        // PdfCopy imports page annotations, but not the catalog's destination name tree.
+        // Resolve names before copying so PdfCopy can remap the retained page references.
+        reader.ConsolidateNamedDestinations();
+        var retainedPages = new HashSet<(int Number, int Generation)>();
+        for (var page = firstPage; page <= lastPage; page++)
+        {
+            var reference = reader.GetPageOrigRef(page);
+            retainedPages.Add((reference.Number, reference.Generation));
+        }
+
+        // Only filter this part's annotations: later parts share the same reader.
+        for (var page = firstPage; page <= lastPage; page++)
+        {
+            var annotations = reader.GetPageN(page).GetAsArray(PdfName.ANNOTS);
+            if (annotations is null) continue;
+
+            for (var index = annotations.Size - 1; index >= 0; index--)
+            {
+                var annotation = annotations.GetAsDict(index);
+                if (annotation?.GetAsName(PdfName.SUBTYPE) != PdfName.LINK) continue;
+
+                var destination = annotation.Get(PdfName.DEST);
+                if (destination is null)
+                {
+                    var action = annotation.GetAsDict(PdfName.A);
+                    if (action?.GetAsName(PdfName.S) != PdfName.GOTO) continue;
+                    destination = action.Get(PdfName.D);
+                }
+
+                var explicitDestination = PdfReader.GetPdfObject(destination) as PdfArray;
+                var target = explicitDestination is { Size: > 0 }
+                    ? explicitDestination.GetAsIndirectObject(0)
+                    : null;
+                if (target is null || !retainedPages.Contains((target.Number, target.Generation)))
+                {
+                    // An omitted or unresolved local target must not become a wrong-page jump.
+                    annotations.Remove(index);
+                }
+            }
         }
     }
 

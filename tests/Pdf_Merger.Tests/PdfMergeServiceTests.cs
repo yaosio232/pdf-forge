@@ -7,6 +7,8 @@ using IoPath = System.IO.Path;
 
 namespace Pdf_Merger.Tests;
 
+// Services share Logger's process-wide output path; run service test classes serially.
+[Collection("PDF services")]
 public sealed class PdfMergeServiceTests
 {
     [Fact]
