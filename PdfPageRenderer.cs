@@ -51,17 +51,22 @@ public static class PdfPageRenderer
             return Array.Empty<string>();
         }
 
+        // Drain both pipes while rendering so a full pipe cannot prevent shutdown.
+        var errorRead = process.StandardError.ReadToEndAsync();
+        var outputRead = process.StandardOutput.ReadToEndAsync();
         while (!process.WaitForExit(200))
         {
             if (cancellationToken.IsCancellationRequested)
             {
                 TryStop(process);
+                // Cleanup must never race a renderer whose termination failed or timed out.
+                process.WaitForExit();
                 cancellationToken.ThrowIfCancellationRequested();
             }
         }
 
-        var errorOutput = process.StandardError.ReadToEnd();
-        var standardOutput = process.StandardOutput.ReadToEnd();
+        var errorOutput = errorRead.GetAwaiter().GetResult();
+        var standardOutput = outputRead.GetAwaiter().GetResult();
         if (process.ExitCode != 0)
         {
             Logger.LogInfo($"Preview renderer failed (exit {process.ExitCode}) using '{renderer}': {errorOutput.Trim()} {standardOutput.Trim()}".Trim());

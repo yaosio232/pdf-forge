@@ -66,6 +66,8 @@ public partial class Form1 : Form
     private int splitZoomPercent = 100;
     private string? splitSourceFile;
     private string? splitPreviewDirectory;
+    private string? splitSourceHash;
+    private readonly List<Task> splitPreviewTasks = new();
     private int splitCurrentPage;
     private int splitPageCount;
     private IReadOnlyList<string> splitRenderedPages = Array.Empty<string>();
@@ -1728,20 +1730,37 @@ public partial class Form1 : Form
 
     private async void LoadSplitPdfAsync(string path)
     {
+        if (isProcessing) return;
         SetSplitProcessing(true);
-        ClearSplitPreview();
-        splitSourceFile = null;
-        splitPageCount = 0;
-        splitCurrentPage = 0;
-        splitAfterPages.Clear();
-        splitFileLabel.Text = Path.GetFileName(path);
-        splitStatusLabel.Text = "Reading PDF pages…";
         try
         {
             var fullPath = Path.GetFullPath(path);
+            var sourceHash = await Task.Run(() =>
+            {
+                using var source = File.OpenRead(fullPath);
+                using var hash = System.Security.Cryptography.SHA256.Create();
+                return Convert.ToHexString(hash.ComputeHash(source));
+            });
+            if (string.Equals(fullPath, splitSourceFile, StringComparison.OrdinalIgnoreCase) &&
+                sourceHash == splitSourceHash && splitLargePreviewImage is not null &&
+                splitPreviewDirectory is not null && Directory.Exists(splitPreviewDirectory))
+            {
+                Logger.LogInfo("Reusing the unchanged PDF preview.");
+                return;
+            }
+
+            await ClearSplitPreview();
+            splitSourceFile = null;
+            splitSourceHash = null;
+            splitPageCount = 0;
+            splitCurrentPage = 0;
+            splitAfterPages.Clear();
+            splitFileLabel.Text = Path.GetFileName(path);
+            splitStatusLabel.Text = "Reading PDF pages…";
             var pageCount = await Task.Run(() => PdfSplitService.GetPageCount(fullPath));
             var previewDirectory = Path.Combine(Path.GetTempPath(), "PdfMergerPreview", Guid.NewGuid().ToString("N"));
             splitSourceFile = fullPath;
+            splitSourceHash = sourceHash;
             splitPageCount = pageCount;
             splitCurrentPage = pageCount > 0 ? 1 : 0;
             splitPreviewDirectory = previewDirectory;
@@ -1875,8 +1894,8 @@ public partial class Form1 : Form
         splitLargePreviewCancellation = new CancellationTokenSource();
         var requestId = ++splitLargePreviewRequestId;
         Logger.LogInfo($"Preview request started for page {splitLargePreviewRequestedPage} (request {requestId}).");
-        _ = LoadLargePagePreviewAsync(splitSourceFile, splitPreviewDirectory,
-            splitLargePreviewRequestedPage, requestId, splitLargePreviewCancellation.Token);
+        TrackSplitPreviewTask(LoadLargePagePreviewAsync(splitSourceFile, splitPreviewDirectory,
+            splitLargePreviewRequestedPage, requestId, splitLargePreviewCancellation.Token));
     }
 
     private void RemoveLargeSplitIndex()
@@ -2419,7 +2438,7 @@ public partial class Form1 : Form
         splitLargePreviewWarmupCancellation?.Dispose();
         splitLargePreviewWarmupCancellation = new CancellationTokenSource();
         var cancellationToken = splitLargePreviewWarmupCancellation.Token;
-        _ = WarmLargePreviewPagesAsync(source, rootDirectory, firstPage, pageCount, cancellationToken);
+        TrackSplitPreviewTask(WarmLargePreviewPagesAsync(source, rootDirectory, firstPage, pageCount, cancellationToken));
     }
 
     private void StartLargeThumbnailWarmup(string source, string rootDirectory, int firstPage, int pageCount)
@@ -2432,8 +2451,8 @@ public partial class Form1 : Form
         splitLargeThumbnailWarmupCancellation?.Cancel();
         splitLargeThumbnailWarmupCancellation?.Dispose();
         splitLargeThumbnailWarmupCancellation = new CancellationTokenSource();
-        _ = WarmLargeThumbnailPagesAsync(source, rootDirectory, firstPage, pageCount,
-            splitLargeThumbnailWarmupCancellation.Token);
+        TrackSplitPreviewTask(WarmLargeThumbnailPagesAsync(source, rootDirectory, firstPage, pageCount,
+            splitLargeThumbnailWarmupCancellation.Token));
     }
 
     private async Task WarmLargeThumbnailPagesAsync(string source, string rootDirectory,
@@ -2467,7 +2486,8 @@ public partial class Form1 : Form
 
                 previewPanel.BeginInvoke(new Action(() =>
                 {
-                    if (cancellationToken.IsCancellationRequested || previewPanel.IsDisposed)
+                    if (cancellationToken.IsCancellationRequested || previewPanel.IsDisposed ||
+                        rootDirectory != splitPreviewDirectory)
                     {
                         return;
                     }
@@ -2551,7 +2571,7 @@ public partial class Form1 : Form
         catch (Exception exception)
         {
             Logger.LogError("Initial preview warmup failed.", exception);
-            if (splitCurrentPage > 0)
+            if (!cancellationToken.IsCancellationRequested && rootDirectory == splitPreviewDirectory && splitCurrentPage > 0)
             {
                 RequestLargePagePreview(splitCurrentPage);
             }
@@ -2628,7 +2648,8 @@ public partial class Form1 : Form
 
             previewPanel.BeginInvoke(new Action(() =>
             {
-                if (requestId != splitLargePreviewRequestId || page != splitLargePreviewRequestedPage ||
+                if (cancellationToken.IsCancellationRequested || rootDirectory != splitPreviewDirectory ||
+                    requestId != splitLargePreviewRequestId || page != splitLargePreviewRequestedPage ||
                     previewPanel.IsDisposed)
                 {
                     return;
@@ -3225,8 +3246,24 @@ public partial class Form1 : Form
         splitPageStack.PerformLayout();
     }
 
-    private void ClearSplitPreview()
+    private void TrackSplitPreviewTask(Task task)
     {
+        splitPreviewTasks.RemoveAll(previous => previous.IsCompletedSuccessfully || previous.IsCanceled);
+        splitPreviewTasks.Add(task);
+    }
+
+    private async Task ClearSplitPreview()
+    {
+        // Invalidate queued callbacks before yielding; a repeated path is still a new session.
+        splitLargePreviewTimer?.Stop();
+        splitLargePreviewRequestId++;
+        splitLargePreviewCancellation?.Cancel();
+        splitLargePreviewWarmupCancellation?.Cancel();
+        splitLargeThumbnailWarmupCancellation?.Cancel();
+        await Task.WhenAll(splitPreviewTasks.ToArray());
+        splitPreviewTasks.Clear();
+        splitLargePreviewImage?.Dispose();
+        splitLargePreviewImage = null;
         RemoveLargeSplitIndex();
         SetSplitPreviewEmptyStateVisible(true);
         splitPageStack.Visible = true;
@@ -3249,21 +3286,14 @@ public partial class Form1 : Form
         splitPreviewDirectory = null;
         splitRenderedPages = Array.Empty<string>();
         splitLargePreviewPaths.Clear();
-        splitLargePreviewCancellation?.Cancel();
         splitLargePreviewCancellation?.Dispose();
         splitLargePreviewCancellation = null;
-        splitLargePreviewWarmupCancellation?.Cancel();
         splitLargePreviewWarmupCancellation?.Dispose();
         splitLargePreviewWarmupCancellation = null;
-        splitLargeThumbnailWarmupCancellation?.Cancel();
         splitLargeThumbnailWarmupCancellation?.Dispose();
         splitLargeThumbnailWarmupCancellation = null;
-        splitLargePreviewTimer?.Stop();
-        splitLargePreviewImage?.Dispose();
-        splitLargePreviewImage = null;
         splitLargePreviewImagePage = 0;
         splitLargePreviewRequestedPage = 0;
-        splitLargePreviewRequestId++;
         splitZoomPercent = 100;
         if (splitZoomLabel is not null)
         {
