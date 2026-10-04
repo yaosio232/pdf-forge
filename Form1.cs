@@ -136,7 +136,7 @@ public partial class Form1 : Form
             return;
         }
 
-        if (!e.Control || modeTabs is null)
+        if (!e.Control || modeTabs is null || !modeTabs.Enabled)
         {
             return;
         }
@@ -156,6 +156,12 @@ public partial class Form1 : Form
         else if (e.KeyCode == Keys.U)
         {
             modeTabs.SelectedIndex = 2;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+        else if (e.KeyCode == Keys.W)
+        {
+            modeTabs.SelectedIndex = 3;
             e.Handled = true;
             e.SuppressKeyPress = true;
         }
@@ -289,6 +295,13 @@ public partial class Form1 : Form
             UseVisualStyleBackColor = false,
             AccessibleName = "Unlock password-protected PDFs"
         };
+        var wordTab = new TabPage("PDF to Word")
+        {
+            BackColor = Canvas,
+            Padding = new Padding(0, 12, 0, 0),
+            UseVisualStyleBackColor = false,
+            AccessibleName = "Convert PDF to Word"
+        };
 
         bodyLayout.Dock = DockStyle.Fill;
         var mergeLayout = new TableLayoutPanel
@@ -306,9 +319,11 @@ public partial class Form1 : Form
         mergeTab.Controls.Add(mergeLayout);
         splitTab.Controls.Add(BuildSplitWorkspace());
         unlockTab.Controls.Add(BuildUnlockWorkspace());
+        wordTab.Controls.Add(BuildPdfToWordWorkspace());
         modeTabs.TabPages.Add(splitTab);
         modeTabs.TabPages.Add(mergeTab);
         modeTabs.TabPages.Add(unlockTab);
+        modeTabs.TabPages.Add(wordTab);
         modeTabs.SelectedIndex = 0;
         modeTabs.SelectedIndexChanged += (_, _) =>
         {
@@ -319,6 +334,10 @@ public partial class Form1 : Form
             else if (modeTabs.SelectedIndex == 2)
             {
                 unlockChooseFilesButton.Focus();
+            }
+            else if (modeTabs.SelectedIndex == 3)
+            {
+                BeginInvoke(new Action(() => { if (!IsDisposed && modeTabs.SelectedIndex == 3) pdfToWordChooseButton.Focus(); }));
             }
         };
 
