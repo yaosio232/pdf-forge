@@ -5,6 +5,7 @@ namespace Pdf_Merger;
 internal static class Logger
 {
     private static readonly object Sync = new();
+    private static readonly Mutex ProcessSync = new(false, "Local\\PDFForgeLogWriter");
     private static string? _logFilePath;
 
     public static string LogFilePath
@@ -91,8 +92,16 @@ internal static class Logger
 
             lock (Sync)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(LogFilePath)!);
-                File.AppendAllText(LogFilePath, builder.ToString(), Encoding.UTF8);
+                var acquired = false;
+                try
+                {
+                    try { acquired = ProcessSync.WaitOne(1000); }
+                    catch (AbandonedMutexException) { acquired = true; }
+                    if (!acquired) return;
+                    Directory.CreateDirectory(Path.GetDirectoryName(LogFilePath)!);
+                    File.AppendAllText(LogFilePath, builder.ToString(), Encoding.UTF8);
+                }
+                finally { if (acquired) ProcessSync.ReleaseMutex(); }
             }
         }
         catch

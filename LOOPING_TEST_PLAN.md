@@ -1,5 +1,9 @@
 # PDF Merger Looping 完整測試計畫
 
+### 2026-10-05 v1.0.5.1 跨電腦待驗交付
+
+使用者要求本輪不用繼續驗證，直接打包上傳，並指定 v1.0.5.1，供另一台電腦實測。依 AGENTS.md 本次例外發佈 EXE／可攜版 ZIP，不合併 main。剩餘 SPLIT-01 至 SPLIT-12 與 WinForms 轉換／取消／關閉／原有 Word 保護驗收未完成的項目維持 BLOCKED；不以打包成功取代驗收。UI 擷取出現 FrameArrived timed out／window capture timed out，點擊缺少 geometry，使用者已以 Escape 停止 Computer Use。發佈頁揭露待驗範圍；所有本機 fixture、文件、log、截圖與 hash 保持本機。
+
 ### 2026-10-05 v1.0.5 GitHub 待驗發佈
 
 使用者要求直接將 v1.0.5 上傳 GitHub，授權本輪原始碼提交、打包與 GitHub 預發佈交付。沿用 AGENTS.md 的本輪發佈例外，SPLIT-01 至 SPLIT-12 與 PDF to Word UI 驗收保持 BLOCKED。發佈頁明列驗收尚未完成，不上傳使用者文件或本機測試證據，不合併 main，一般驗收標準不變。

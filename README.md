@@ -10,6 +10,7 @@ PDF Forge 是 Windows 桌面 PDF 工具。你可以用它預覽並分割 PDF、�
 - **合併文件**：加入 PDF、DOC 或 DOCX，調整順序後輸出成一份 PDF。合併 Word 文件需要電腦已安裝桌面版 Microsoft Word。
 - **批次解除 PDF 加密**：選取多份 PDF，輸入它們共用的已知密碼，再選擇輸出資料夾。程式不會猜測密碼，原始檔案不會被修改。
 - **PDF 轉 Word**：將一份完整 PDF 轉成可編輯的 DOCX，需要桌面版 Microsoft Word。所有處理在本機完成；排版可能改變，掃描頁可能保留為圖片，未提供 OCR。
+- **批次 Markdown 轉 PDF**：一次選取或拖入多份 `.md`／`.markdown`，各自產生 PDF。使用已安裝的 Edge 或 Chrome，不需要 Word；支援標題、段落、清單、表格與程式碼區塊。第一版不顯示圖片，也不執行原始 HTML。
 
 ## 開始使用
 
@@ -24,7 +25,11 @@ dotnet run --project .\Pdf_Merger.csproj
 1. **分割**：按 **Open PDF** 或拖入 PDF；用滑鼠滾輪瀏覽頁面，也可以點縮圖或輸入頁碼跳頁。按頁面之間的剪刀加入切點，再按一次可取消。確認右側的分割結果與檔名後，按 **Save ... split PDFs** 選擇儲存位置。
 2. **合併**：切到 **Merge PDFs**，按選檔按鈕或拖入 PDF／Word 文件；用上下移動按鈕調整順序，接著按 **Merge PDF** 選擇輸出檔名。
 3. **解除加密**：切到 **Unlock PDFs**，加入加密 PDF，輸入已知密碼並選擇輸出資料夾，最後按 **Unlock PDFs**。所有選取的檔案會使用同一組密碼。
-4. **PDF 轉 Word**：切到 **PDF to Word**（Ctrl+W），將一份 PDF 拖入分頁，或按 **Choose PDF…** 選檔；再按 **Convert to Word** 指定 DOCX 儲存路徑。成功後可按 **Open output folder** 開啟匯出資料夾。轉換期間請等待完成再關閉視窗；失敗時既有輸出不會被取代。加密 PDF 請先解除加密，完成後請檢查 Word 文件的內容與排版。
+4. **檔案轉換**：切到 **Convert Files**（Ctrl+W），選擇 **PDF → Word** 或 **Markdown → PDF (batch)**。PDF 模式選取或拖入一份 PDF，再按 **Convert to Word** 選擇 DOCX 路徑；Markdown 模式可以多選或拖入多份 Markdown，再按 **Convert to PDF** 選擇輸出資料夾。既有輸出需確認覆寫；同名 Markdown 必須先改名。成功後可按 **Open output folder** 開啟匯出資料夾。
+
+轉換期間可按 **Cancel conversion** 停止工作，或關閉主視窗，程式會停止這次工作、清理暫存檔後退出。Word 轉換五分鐘逾時、Markdown 每檔兩分鐘逾時；取消／失敗的檔案不會取代既有輸出，批次先前成功的檔案會保留。Word 使用獨立程序；不會終止原有 Word。**Open log folder** 在轉換期間仍可使用，log 記錄啟動、開啟、儲存及清理階段。Word 若出現首次啟動、啟用或轉換提示，可取消後先處理 Word 設定再重試。加密 PDF 請先解除加密，完成後請檢查 Word 文件內容與排版。
+
+Markdown 在隔離的本機瀏覽器設定檔中列印，禁止讀取外部圖片、字型與執行腳本，不上傳文件；圖片（含本機圖片）會省略。Edge／Chrome 必須另外安裝，程式不會自動安裝瀏覽器。
 
 分割時的 **−**、**+** 和 **Fit** 可調整預覽大小。儲存分割結果時，檔案會使用右側清單中的名稱，放在所選位置的資料夾內。請在儲存前確認檔名與輸出位置。
 
@@ -61,7 +66,7 @@ dotnet publish .\Pdf_Merger.csproj -c Release -r win-x64 --self-contained
 
 PDF Forge 的原始程式碼以 [GNU Affero General Public License v3.0（AGPL-3.0-only）](LICENSE.md) 開源。你可以使用、研究、修改與再散布，但散布修改版或提供網路服務時，須遵守 AGPLv3 的原始碼與授權告知義務。本工具產生或處理的 PDF，不會只因使用本工具而自動套用 AGPLv3。
 
-PDF Forge 使用 [iTextSharp 5.5.13.4](https://www.nuget.org/packages/iTextSharp/5.5.13.4)，它採 AGPLv3／商業授權雙軌；也使用採 MIT 授權的 BouncyCastle.Cryptography。這些相依套件保留各自的著作權與授權條款，詳見 [授權與第三方聲明](NOTICE.md)。本專案不提供保固。
+PDF Forge 使用 [iTextSharp 5.5.13.4](https://www.nuget.org/packages/iTextSharp/5.5.13.4)，它採 AGPLv3／商業授權雙軌；也使用採 MIT 授權的 BouncyCastle.Cryptography，以及 BSD-2-Clause 授權的 Markdig 1.3.2。這些相依套件保留各自的著作權與授權條款，詳見 [授權與第三方聲明](NOTICE.md)。本專案不提供保固。
 
 可攜版 ZIP 另附 [Poppler](https://poppler.freedesktop.org/) 26.07.0（GPL-2.0-or-later）及其 Windows 原生相依檔；Windows binary 取自 conda-forge 套件 `poppler=26.07.0=h6618ce5_3`。相關授權與可取得對應原始碼的資訊包含在 ZIP、[NOTICE.md](NOTICE.md) 與 [Poppler 來源說明](licenses/Poppler-26.07.0-SOURCE.md)。
 

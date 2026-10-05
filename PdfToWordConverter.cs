@@ -8,13 +8,14 @@ namespace Pdf_Merger;
 
 public sealed class PdfToWordConverter
 {
-    private readonly Action<string, string> convertDocument;
+    private readonly Action<string, string, CancellationToken> convertDocument;
 
-    public PdfToWordConverter() : this(ConvertWithWord) { }
-    internal PdfToWordConverter(Action<string, string> convert) => convertDocument = convert;
+    public PdfToWordConverter() => convertDocument = WordConversionWorker.Convert;
+    internal PdfToWordConverter(Action<string, string> convert) => convertDocument = (source, output, _) => convert(source, output);
 
-    public void Convert(string sourcePath, string outputPath)
+    public void Convert(string sourcePath, string outputPath, CancellationToken cancellation = default)
     {
+        cancellation.ThrowIfCancellationRequested();
         var source = Path.GetFullPath(sourcePath);
         var output = Path.GetFullPath(outputPath);
         if (string.Equals(source, output, StringComparison.OrdinalIgnoreCase))
@@ -41,8 +42,9 @@ public sealed class PdfToWordConverter
         {
             // Reserve the sibling file first, so unwritable folders fail before starting Word.
             using (new FileStream(temporary, FileMode.CreateNew, FileAccess.Write)) { }
-            convertDocument(source, temporary);
+            convertDocument(source, temporary, cancellation);
             ValidateDocx(temporary);
+            cancellation.ThrowIfCancellationRequested();
             if (File.Exists(output)) File.Replace(temporary, output, null);
             else File.Move(temporary, output);
         }
@@ -81,27 +83,29 @@ public sealed class PdfToWordConverter
             throw new InvalidDataException("Word produced an invalid DOCX document.");
     }
 
-    private static void ConvertWithWord(string source, string output)
+    internal static void ConvertWithWord(string source, string output, string marker)
     {
         if (Thread.CurrentThread.GetApartmentState() != ApartmentState.STA)
             throw new InvalidOperationException("Word conversion must run on an STA thread.");
-        var wordType = Type.GetTypeFromProgID("Word.Application") ??
-            throw new InvalidOperationException("Microsoft Word desktop is required. Install Word before converting PDFs.");
         object? application = null;
         object? documents = null;
         object? document = null;
         var saved = false;
+        using var process = WordConversionWorker.StartOwnedWord(marker);
         try
         {
-            dynamic word = Activator.CreateInstance(wordType)!;
+            Logger.LogInfo("PDF to Word: connecting COM to the already recorded Word instance.");
+            dynamic word = WordConversionWorker.GetOwnedApplication(process);
             application = word;
             word.Visible = false;
             word.ScreenUpdating = false;
             word.DisplayAlerts = 0;
             word.AutomationSecurity = 3; // Disable macros in this automation instance.
             documents = word.Documents;
+            Logger.LogInfo("PDF to Word: opening PDF (Word may display a conversion prompt).");
             document = ((dynamic)documents).Open(source, ConfirmConversions: false,
                 ReadOnly: true, AddToRecentFiles: false, Visible: false, NoEncodingDialog: true);
+            Logger.LogInfo("PDF to Word: saving temporary DOCX.");
             ((dynamic)document).SaveAs2(output, FileFormat: 16, AddToRecentFiles: false);
             saved = true;
         }
@@ -112,6 +116,7 @@ public sealed class PdfToWordConverter
         finally
         {
             Exception? cleanupFailure = null;
+            Logger.LogInfo("PDF to Word: closing document and owned Word instance.");
             try { if (document is not null) ((dynamic)document).Close(SaveChanges: false); }
             catch (Exception exception) { cleanupFailure = exception; Logger.LogError("Closing the PDF conversion document failed.", exception); }
             try { if (application is not null) ((dynamic)application).Quit(SaveChanges: false); }
@@ -121,6 +126,7 @@ public sealed class PdfToWordConverter
                 try { if (value is not null && Marshal.IsComObject(value)) Marshal.FinalReleaseComObject(value); }
                 catch (Exception exception) { Logger.LogError("Releasing a Word conversion COM object failed.", exception); }
             }
+            if (!process.HasExited) { process.Kill(); process.WaitForExit(5000); }
             if (saved && cleanupFailure is not null)
                 throw new IOException("Word saved a temporary document but could not close cleanly. The output was not replaced.", cleanupFailure);
         }

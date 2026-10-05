@@ -11,6 +11,37 @@ public sealed class WordConversionUiCollection { }
 public class PdfToWordTabTests
 {
     [Fact]
+    public void BusyConversionStillOffersCancelAndLogFolder()
+    {
+        RunSta(() =>
+        {
+            using var form = new Form1();
+            typeof(Form1).GetMethod("SetPdfToWordProcessing", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(form, new object[] { true });
+            var cancel = Assert.Single(Descendants(form).OfType<Button>().Where(button => button.AccessibleName == "Cancel file conversion"));
+            var log = Assert.Single(Descendants(form).OfType<Button>().Where(button => button.AccessibleName == "Open conversion log folder"));
+            Assert.True(cancel.Enabled);
+            Assert.True(log.Enabled);
+        });
+    }
+
+    [Fact]
+    public void ConversionTabOffersWordAndWordFreeMarkdownModes()
+    {
+        RunSta(() =>
+        {
+            using var form = new Form1();
+            var tab = Assert.Single(Field<TabControl>(form, "modeTabs").TabPages.Cast<TabPage>().Where(page => page.Text == "Convert Files"));
+            var modes = Assert.Single(Descendants(tab).OfType<ComboBox>());
+            Assert.Equal(new[] { "PDF → Word", "Markdown → PDF (batch)" }, modes.Items.Cast<string>());
+            modes.SelectedIndex = 1;
+            var handler = typeof(Form1).GetMethod("PdfToWordDragEnter", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var data = new DataObject(DataFormats.FileDrop, new[] { "first.md", "second.markdown" });
+            var args = new DragEventArgs(data, 0, 0, 0, DragDropEffects.Copy, DragDropEffects.None);
+            handler.Invoke(form, new object?[] { form, args });
+            Assert.Equal(DragDropEffects.Copy, args.Effect);
+        });
+    }
+    [Fact]
     public void NewTabOffersConversionWithoutChangingStartupMode()
     {
         RunSta(() =>
@@ -18,7 +49,7 @@ public class PdfToWordTabTests
             using var form = new Form1();
             var tabs = Field<TabControl>(form, "modeTabs");
             Assert.Equal("Split PDF", tabs.SelectedTab!.Text);
-            var tab = Assert.Single(tabs.TabPages.Cast<TabPage>().Where(page => page.Text == "PDF to Word"));
+            var tab = Assert.Single(tabs.TabPages.Cast<TabPage>().Where(page => page.Text == "Convert Files"));
             Assert.Contains(Descendants(tab), control => control is Button && control.AccessibleName == "Choose a PDF to convert to Word");
             var convert = Assert.Single(Descendants(tab).Where(control => control is Button && control.AccessibleName == "Convert PDF to Word"));
             Assert.False(convert.Enabled);
@@ -34,7 +65,9 @@ public class PdfToWordTabTests
             typeof(Form1).GetField("pdfToWordSource", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(form, "source.pdf");
             var setter = typeof(Form1).GetMethod("SetPdfToWordProcessing", BindingFlags.Instance | BindingFlags.NonPublic)!;
             setter.Invoke(form, new object[] { true });
-            Assert.False(Field<TabControl>(form, "modeTabs").Enabled);
+            var tabs = Field<TabControl>(form, "modeTabs");
+            Assert.True(tabs.Enabled); // Cancel/log buttons inside the tab must remain usable.
+            Assert.All(tabs.TabPages.Cast<TabPage>().Where(tab => tab.Text != "Convert Files"), tab => Assert.False(tab.Enabled));
             Assert.True(Field<bool>(form, "isProcessing"));
             Assert.False(Field<Button>(form, "pdfToWordChooseButton").Enabled);
             setter.Invoke(form, new object[] { false });

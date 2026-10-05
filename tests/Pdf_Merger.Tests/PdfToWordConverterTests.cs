@@ -44,6 +44,29 @@ public sealed class PdfToWordConverterTests : IDisposable
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CancellationNeverCommitsAndRemovesTemporary(bool beforeStart)
+    {
+        using var cancellation = new CancellationTokenSource();
+        File.WriteAllText(output, "previous output");
+        var before = SHA256.HashData(File.ReadAllBytes(source));
+        var called = false;
+        if (beforeStart) cancellation.Cancel();
+        var converter = new PdfToWordConverter((_, temporary) =>
+        {
+            called = true;
+            WriteDocx(temporary);
+            cancellation.Cancel();
+        });
+        Assert.ThrowsAny<OperationCanceledException>(() => converter.Convert(source, output, cancellation.Token));
+        Assert.Equal(!beforeStart, called);
+        Assert.Equal("previous output", File.ReadAllText(output));
+        Assert.Equal(before, SHA256.HashData(File.ReadAllBytes(source)));
+        Assert.Equal(2, Directory.GetFiles(directory).Length);
+    }
+
+    [Theory]
     [InlineData("exception")]
     [InlineData("missing")]
     [InlineData("empty")]

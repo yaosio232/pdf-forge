@@ -295,12 +295,12 @@ public partial class Form1 : Form
             UseVisualStyleBackColor = false,
             AccessibleName = "Unlock password-protected PDFs"
         };
-        var wordTab = new TabPage("PDF to Word")
+        var wordTab = new TabPage("Convert Files")
         {
             BackColor = Canvas,
             Padding = new Padding(0, 12, 0, 0),
             UseVisualStyleBackColor = false,
-            AccessibleName = "Convert PDF to Word"
+            AccessibleName = "Convert PDF to Word or batch Markdown to PDF"
         };
 
         bodyLayout.Dock = DockStyle.Fill;
