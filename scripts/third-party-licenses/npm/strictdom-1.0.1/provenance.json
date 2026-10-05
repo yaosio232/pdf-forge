@@ -1,0 +1,16 @@
+{
+  "name": "strictdom",
+  "version": "1.0.1",
+  "group": "npm",
+  "license": "MIT",
+  "repo": "wilsonpage/strictdom",
+  "commit": "a3bbf19013ecc9c9d165dd4ed89e94757161443e",
+  "sources": [
+    {
+      "file": "LICENSE-README.md",
+      "url": "https://raw.githubusercontent.com/wilsonpage/strictdom/a3bbf19013ecc9c9d165dd4ed89e94757161443e/README.md",
+      "sha256": "eec385fa29ca410bf6bdbb5ddd5939af2067f474d3cd6d3fd46a4488656d8cbf",
+      "note": "Verbatim complete license section from pinned upstream README."
+    }
+  ]
+}

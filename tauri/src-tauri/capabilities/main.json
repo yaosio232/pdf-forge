@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Main window events; document access is guarded by Rust commands and native dialogs",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

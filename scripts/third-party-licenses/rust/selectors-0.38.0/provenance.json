@@ -1,0 +1,21 @@
+{
+  "name": "selectors",
+  "version": "0.38.0",
+  "group": "rust",
+  "license": "MPL-2.0",
+  "repo": "servo/stylo",
+  "commit": "572ecba2d1600e7c3d490586692a209faf703baa",
+  "sources": [
+    {
+      "file": "LICENSE-MPL-2.0.txt",
+      "url": "https://www.mozilla.org/media/MPL/2.0/index.txt",
+      "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+    },
+    {
+      "file": "NOTICE-UPSTREAM.txt",
+      "url": "https://raw.githubusercontent.com/servo/stylo/572ecba2d1600e7c3d490586692a209faf703baa/selectors/lib.rs",
+      "sha256": "766674381e88a468d55e07de3596987391cf0e8beebe51baf4fddf11078785b3",
+      "note": "Verbatim source license header; MPL-2.0 URL identified upstream."
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+# Preserve exact upstream notice bytes for provenance checksum verification.
+scripts/third-party-licenses/** -text

@@ -1,0 +1,18 @@
+{
+  "name": "fastdom",
+  "version": "1.0.12",
+  "group": "npm",
+  "license": "MIT",
+  "repo": "wilsonpage/fastdom",
+  "commit": "a7b9044d58952b970c8b918dcf0e7c8824ba0ff5",
+  "sources": [
+    {
+      "file": "LICENSE-README.md",
+      "url": "https://registry.npmjs.org/fastdom/-/fastdom-1.0.12.tgz",
+      "sha256": "df2ae14f12f31864acef768195afe4584b08a257f25925f49884619279f02f37",
+      "note": "Verbatim published package/README.md license section; npm archive SHA512 integrity verified. gitHead in metadata is unavailable upstream."
+    }
+  ],
+  "commitUnavailable": true,
+  "archiveIntegrity": "sha512-LB+xjSTEbjHE1cWsxu+tN2Xqr1kpi+V9aADI7sVM5ZMaXyYGPHULQMzpJMYqOTULK/73pUkWVzzObFRBkPr+hg=="
+}

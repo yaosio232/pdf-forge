@@ -17,3 +17,13 @@ Pdf_Merger.exe
 tests/*.pdf
 tests/*.png
 tests/Unlocked/
+.tools/
+.superpowers/
+tauri/node_modules/
+tauri/dist/
+tauri/src-tauri/target/
+tauri/src-tauri/gen/
+tauri/public/pdfjs/
+tauri/public/markdown/
+tauri/public/licenses/
+tauri/tsconfig.tsbuildinfo

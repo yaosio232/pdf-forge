@@ -1,5 +1,9 @@
 # PDF Forge
 
+## 2.x Tauri 開發分支
+
+`codex/tauri-v2` 從 v1.0.5 (`a78a22b`) 獨立開發，版本從 `2.0.0-alpha.1` 開始。四個工作區使用 Tauri 2、React 與 Rust；開發／打包方式見 [2.x 說明](tauri/README.md)，功能對照見 [UX 規格](docs/TAURI_V2_UX.md)。本輪僅基本單元測試，實際 UI 與轉換驗收仍待執行。下列內容保留為 1.x WinForms 使用說明。
+
 PDF Forge 是 Windows 桌面 PDF 工具。你可以用它預覽並分割 PDF、依指定順序合併文件，或在知道密碼的情況下批次產生未加密的 PDF 副本。檔案在本機處理。
 
 原始碼公開在 [GitHub](https://github.com/yaosio232/pdf-forge)；Windows 可攜版 ZIP 可從 [Releases](https://github.com/yaosio232/pdf-forge/releases) 下載。ZIP 內含 PDF 預覽所需的 Poppler，請完整解壓後使用。

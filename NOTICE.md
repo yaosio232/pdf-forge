@@ -2,6 +2,10 @@
 
 Copyright © 2026 yaosio232.
 
+## Tauri 2.x
+
+`tauri/` 是獨立的 2.x Rust／React 實作，不載入 iTextSharp、BouncyCastle、Poppler 或 .NET。其相依版本固定於 Cargo.lock 與 package-lock.json：Tauri／lopdf／pulldown-cmark／Windows bindings 採各套件的 MIT／Apache 等原授權；React、Mermaid、KaTeX、Lucide 保留 MIT 聲明，PDF.js 保留 Apache-2.0 聲明。實際套件 SPDX、原始 license／notice 全文由 `scripts/collect-tauri-notices.py` 從建置套件產生並附於 2.x 交付物。下方原有元件表仍適用 1.x。Microsoft Word 與 WebView2 Runtime 不包含於可攜 ZIP；安裝程式可安裝 Microsoft 提供的 WebView2 bootstrapper。
+
 除另有標示外，PDF Forge 原始程式碼以 [GNU Affero General Public License version 3](LICENSE.md)（SPDX: `AGPL-3.0-only`）提供。這份授權允許使用、修改與再散布，也規定散布程式或提供網路互動服務時須保留授權告知並提供對應原始碼。完整權利與義務以授權全文為準。原始碼位於 <https://github.com/yaosio232/pdf-forge>；程式與原始碼均不提供保固。
 
 本專案的授權不取代第三方套件的授權：
