@@ -1,5 +1,9 @@
 # PDF Merger 強制測項規範
 
+## 2026-10-06 2.x tag 與待驗預發佈授權
+
+使用者在取得 portable EXE 後明確要求「上傳到git tag」，授權推送 `codex/tauri-v2`、建立 `v2.0.0-alpha.1` tag，並將原始碼與 EXE／完整可攜 ZIP／安裝包上傳至該 tag 的 GitHub 待驗預發佈頁。此授權取代前次本輪不建立 GitHub Release 的限制；仍僅基本單元測試，不使用 computer use、不合併 main、不追認 UI 或原生轉換驗收通過。發佈說明須揭露 BLOCKED 測項、Word／WebView2 前置需求及可攜 EXE 旁的 DLL／資源要求。不上传使用者文件、測試 fixture、log 或本機驗收證據。
+
 ## 2026-10-05 Tauri 2.x 與本輪單元測試授權
 
 使用者批准建立獨立 codex/tauri-v2 分支與 worktree，2.x 使用實際 Tauri UI 執行同等驗收，1.x 保留 WinForms 規範。40 頁、固定切點及 7/7/7/7/6/6 標準與逐項證據不變。隨後使用者要求本輪先不驗證，僅基本 unit test，並澄清不要用 computer use；因此本輪不執行完整 UI、跨機或 release gate，相關測項標 BLOCKED，不追認 PASS。可執行 Rust／前端基本單元測試與必要編譯、本機待驗打包；不合併 main、不建立 GitHub Release。使用者文件、測試資料及本機證據不得外傳。

@@ -1,6 +1,6 @@
 # PDF Forge 2.0.0-alpha.1 status — 2026-10-06
 
-Implementation is on `codex/tauri-v2`, based on v1.0.5 `a78a22b`, in an isolated worktree. The existing 1.x C# sources and workspace changes are preserved. No main merge, push or GitHub release is included.
+Implementation is on `codex/tauri-v2`, based on v1.0.5 `a78a22b`, in an isolated worktree. The existing 1.x C# sources and workspace changes are preserved. After local delivery, the user authorized pushing this branch and publishing tag `v2.0.0-alpha.1` with pending-validation packages on 2026-10-06. No main merge is included; acceptance status is unchanged.
 
 ## Basic checks
 

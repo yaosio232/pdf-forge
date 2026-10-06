@@ -36,4 +36,4 @@ Files are processed locally. Existing sources and output files are protected by 
 
 ## License
 
-Project source remains AGPL-3.0-only. Tauri, React, PDF.js, lopdf, pulldown-cmark, Mermaid, KaTeX, Windows bindings and other dependencies retain their own licenses. Build resources carry third-party notices; consult the root LICENSE.md and NOTICE.md. No GitHub release or main merge is part of this implementation.
+Project source remains AGPL-3.0-only. Tauri, React, PDF.js, lopdf, pulldown-cmark, Mermaid, KaTeX, Windows bindings and other dependencies retain their own licenses. Build resources carry third-party notices; consult the root LICENSE.md and NOTICE.md. The user subsequently authorized a pending-validation GitHub prerelease under v2.0.0-alpha.1 on 2026-10-06. No main merge is included.
