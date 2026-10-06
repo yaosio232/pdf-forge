@@ -27,3 +27,7 @@ tauri/public/pdfjs/
 tauri/public/markdown/
 tauri/public/licenses/
 tauri/tsconfig.tsbuildinfo
+
+__pycache__/
+
+portable-launcher/target/

@@ -3,8 +3,8 @@ import {
   getDocument,
   GlobalWorkerOptions,
   type PDFDocumentProxy,
-} from "pdfjs-dist";
-import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+} from "pdfjs-dist/legacy/build/pdf.mjs";
+import worker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { Scissors } from "lucide-react";
 import type { Key } from "./i18n";
 GlobalWorkerOptions.workerSrc = worker;
@@ -91,13 +91,19 @@ export default function Preview({
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   useEffect(() => {
     let cancelled = false;
-    const task = getDocument({
-      data: Uint8Array.from(data),
-      cMapUrl: "/pdfjs/cmaps/",
-      cMapPacked: true,
-      standardFontDataUrl: "/pdfjs/standard_fonts/",
-      wasmUrl: "/pdfjs/wasm/",
-    });
+    let task: ReturnType<typeof getDocument>;
+    try {
+      task = getDocument({
+        data: Uint8Array.from(data),
+        cMapUrl: "/pdfjs/cmaps/",
+        cMapPacked: true,
+        standardFontDataUrl: "/pdfjs/standard_fonts/",
+        wasmUrl: "/pdfjs/wasm/",
+      });
+    } catch {
+      onError();
+      return;
+    }
     setDoc(undefined);
     setCurrent(view.page);
     setReady(new Set());

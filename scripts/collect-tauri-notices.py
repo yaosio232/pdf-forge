@@ -55,10 +55,14 @@ for key, value in lock['packages'].items():
     if not package.exists(): continue
     metadata = json.loads(package.read_text(encoding='utf-8'))
     collect(metadata.get('name', key.removeprefix('node_modules/')), str(metadata.get('version', value['version'])), metadata.get('license', value.get('license')), source, 'npm')
-if len(sys.argv) > 1:
-    metadata = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
+seen_rust = set()
+for metadata_path in sys.argv[1:]:
+    metadata = json.loads(pathlib.Path(metadata_path).read_text(encoding='utf-8-sig'))
     for package in metadata['packages']:
         if package.get('source') and package['source'].startswith('registry+'):
+            identity = (package['name'], package['version'])
+            if identity in seen_rust: continue
+            seen_rust.add(identity)
             collect(package['name'], package['version'], package['license'], pathlib.Path(package['manifest_path']).parent, 'rust')
 # WebView2Loader is Microsoft SDK redistributable code, separate from the Rust MIT wrapper.
 # Exact SDK package notices were acquired once and remain available without network access.

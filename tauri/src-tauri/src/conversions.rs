@@ -102,6 +102,7 @@ mod win {
         }
     }
     fn call(object: &IDispatch, name: &str, flags: DISPATCH_FLAGS, mut args: Vec<VARIANT>) -> windows::core::Result<VARIANT> {
+        let member = name;
         let name = wide(name);
         let mut id = 0;
         let mut named = -3i32; // DISPID_PROPERTYPUT
@@ -114,8 +115,8 @@ mod win {
         let mut result = VARIANT::default();
         let mut exception = EXCEPINFO::default();
         unsafe {
-            object.GetIDsOfNames(&GUID::zeroed(), &PCWSTR(name.as_ptr()), 1, 0x0409, &mut id)?;
-            object.Invoke(id, &GUID::zeroed(), 0x0409, flags, &params, Some(&mut result), Some(&mut exception), None)?;
+            object.GetIDsOfNames(&GUID::zeroed(), &PCWSTR(name.as_ptr()), 1, 0x0409, &mut id).map_err(|e| windows::core::Error::new(e.code(), format!("Word member {member}: {e}")))?;
+            object.Invoke(id, &GUID::zeroed(), 0x0409, flags, &params, Some(&mut result), Some(&mut exception), None).map_err(|e| windows::core::Error::new(e.code(), format!("Word invocation {member}: {e}")))?;
         }
         Ok(result)
     }
@@ -141,30 +142,52 @@ mod win {
         fn drop(&mut self) { let _ = call(&self.0, "Close", DISPATCH_METHOD, vec![0i32.into()]); }
     }
     fn ticks(time: FILETIME) -> u64 { ((time.dwHighDateTime as u64) << 32) | time.dwLowDateTime as u64 }
+    unsafe extern "system" fn word_windows(hwnd: HWND, data: LPARAM) -> windows::core::BOOL {
+        let mut class = [0u16; 64];
+        let length = GetClassNameW(hwnd, &mut class);
+        if String::from_utf16_lossy(&class[..length.max(0) as usize]) == "OpusApp" {
+            let mut pid = 0; GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            (*(data.0 as *mut Vec<u32>)).push(pid);
+        }
+        true.into()
+    }
     pub fn word(source: &Path, output: &Path, pdf: bool) -> Result<()> {
         let source = source.canonicalize()?;
         if output.exists() { return Err("Worker output must be a new staging file".into()); }
         let output = output.parent().ok_or("Missing output directory")?.canonicalize()?.join(output.file_name().ok_or("Missing output name")?);
         if source == output { return Err("Output equals source".into()); }
+        // Desktop Word's Open/Save APIs reject long file paths even when Rust
+        // and Windows support them. Keep native I/O in the private worker folder.
+        let worker_directory = std::env::var_os("PDF_FORGE_CANCEL_FILE").and_then(|p| PathBuf::from(p).parent().map(Path::to_path_buf));
+        let workspace = tempfile::tempdir_in(worker_directory.as_deref().unwrap_or(output.parent().ok_or("Missing output directory")?))?;
+        let office_input = if office_path(&source).encode_utf16().count() >= 240 {
+            let extension = source.extension().unwrap_or_default().to_string_lossy();
+            let copy = workspace.path().join(format!("input.{extension}"));
+            fs::copy(&source, &copy)?;
+            copy
+        } else { source.clone() };
+        let office_output = workspace.path().join(if pdf { "output.pdf" } else { "output.docx" });
         let _com = Apartment::new()?;
         let started = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() / 100 + 116444736000000000;
         let clsid = unsafe { CLSIDFromProgID(w!("Word.Application"))? };
         let app: IDispatch = unsafe { CoCreateInstance(&clsid, None, CLSCTX_LOCAL_SERVER)? };
         // Never quit or change a pre-existing user's Word instance.
         let mut word = Word { app, owned: false, options: None };
-        let hwnd = i32::try_from(&call(&word.app, "Hwnd", DISPATCH_PROPERTYGET, vec![])?)?;
-        let mut pid = 0;
-        unsafe { GetWindowThreadProcessId(HWND(hwnd as isize as *mut _), Some(&mut pid)); }
-        if pid == 0 { return Err("Cannot determine Word process identity".into()); }
-        let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)? };
-        let mut creation = FILETIME::default();
-        let mut exit = FILETIME::default();
-        let mut kernel = FILETIME::default();
-        let mut user = FILETIME::default();
-        let times = unsafe { GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) };
-        unsafe { let _ = CloseHandle(process); }
-        times?;
-        if (ticks(creation) as u128) < started { return Err("Word reused an existing process; conversion refused to protect the user's session".into()); }
+        // Word exposes HWND on document Window, not Application. Before opening
+        // documents, identify its hidden OpusApp window without touching an existing session.
+        let mut pids = Vec::<u32>::new();
+        unsafe { EnumWindows(Some(word_windows), LPARAM(&mut pids as *mut _ as isize))?; }
+        pids.sort_unstable(); pids.dedup();
+        let mut candidates = Vec::new();
+        for pid in pids {
+            let Ok(process) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }) else { continue };
+            let (mut creation, mut exit, mut kernel, mut user) = (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+            let times = unsafe { GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) };
+            unsafe { let _ = CloseHandle(process); }
+            if times.is_ok() && ticks(creation) as u128 >= started { candidates.push((pid, creation)); }
+        }
+        if candidates.len() != 1 { return Err("Cannot uniquely identify a newly created Word process; existing sessions are protected".into()); }
+        let (pid, creation) = candidates[0];
         word.owned = true;
         let identity = std::env::var_os("PDF_FORGE_WORD_IDENTITY").ok_or("Word worker requires a supervisor identity file")?;
         fs::write(identity, serde_json::to_vec(&serde_json::json!({"pid":pid,"creationTime":ticks(creation)}))?)?;
@@ -181,21 +204,28 @@ mod win {
         let docs = object(&word.app, "Documents")?;
         // Filename, ConfirmConversions, ReadOnly, AddToRecentFiles.
         let document = Document(IDispatch::try_from(&call(&docs, "Open", DISPATCH_METHOD, vec![
-            BSTR::from(office_path(&source).as_str()).into(), false.into(), true.into(), false.into(),
+            BSTR::from(office_path(&office_input).as_str()).into(), false.into(), true.into(), false.into(),
             BSTR::from("PDF-Forge-does-not-open-password-protected-Word-documents").into(),
             BSTR::from("PDF-Forge-does-not-open-password-protected-Word-templates").into()
         ])?)?);
         if pdf {
             // Print quality, complete document, no properties/tags, and heading bookmarks.
             call(&document.0, "ExportAsFixedFormat", DISPATCH_METHOD, vec![
-                BSTR::from(office_path(&output).as_str()).into(), 17i32.into(), false.into(),
+                BSTR::from(office_path(&office_output).as_str()).into(), 17i32.into(), false.into(),
                 0i32.into(), 0i32.into(), 1i32.into(), 1i32.into(), 0i32.into(),
                 false.into(), false.into(), 1i32.into(), false.into(), true.into(), false.into()
             ])?;
         } else {
-            call(&document.0, "SaveAs2", DISPATCH_METHOD, vec![BSTR::from(office_path(&output).as_str()).into(), 16i32.into()])?;
+            call(&document.0, "SaveAs2", DISPATCH_METHOD, vec![BSTR::from(office_path(&office_output).as_str()).into(), 16i32.into()])?;
         }
-        if fs::metadata(&output)?.len() == 0 { return Err("Word produced an empty file".into()); }
+        if fs::metadata(&office_output)?.len() == 0 { return Err("Word produced an empty file".into()); }
+        // Release Word's document handle before copying across volumes. Never
+        // replace a pre-existing staging file, including a racing writer.
+        drop(document);
+        let mut produced = fs::File::open(&office_output)?;
+        let mut target = fs::OpenOptions::new().write(true).create_new(true).open(&output)?;
+        let transfer = std::io::copy(&mut produced, &mut target).and_then(|_| target.sync_all());
+        if let Err(error) = transfer { drop(target); let _ = fs::remove_file(&output); return Err(error.into()); }
         Ok(())
     }
 
@@ -300,7 +330,11 @@ mod win {
         let css = fs::read_to_string(asset_dir.join("renderer.css"))?;
         // Trusted build assets are embedded, never interpolated from document content.
         let readiness = r#"<script>(async()=>{try{await window.renderMarkdown();await document.fonts.ready;await Promise.all([...document.images].map(i=>i.complete?(i.naturalWidth?Promise.resolve():Promise.reject(Error('Image decode failed'))):new Promise((r,j)=>{i.onload=r;i.onerror=()=>j(Error('Image decode failed'))})));window.chrome.webview.postMessage('ready')}catch(e){window.chrome.webview.postMessage('error:'+String(e))}})()</script>"#;
-        let html = html.replace("</head>", &format!("<style>{}</style><script>{}</script></head>", css.replace("</style", "<\\/style"), js.replace("</script", "<\\/script"))).replace("</body>", &format!("{readiness}</body>"));
+        let diagnostics = "<script>window.addEventListener('error',e=>window.chrome.webview.postMessage('error:Renderer startup '+e.message));</script>";
+        // Insert body markup before the bundle: Mermaid/DOMPurify contains literal
+        // </body> strings, which a subsequent replace would corrupt as JavaScript.
+        let html = html.replacen("</body>", &format!("{readiness}</body>"), 1)
+            .replacen("</head>", &format!("{diagnostics}<style>{}</style><script>{}</script></head>", css.replace("</style", "<\\/style"), js.replace("</script", "<\\/script")), 1);
         fs::write(&document_path, html)?;
         let url = wide(&document_url);
         unsafe { view.Navigate(PCWSTR(url.as_ptr()))?; }

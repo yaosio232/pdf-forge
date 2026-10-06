@@ -1,6 +1,6 @@
 # PDF Forge 2.x UX and feature contract
 
-Version: 2.0.0-alpha.1. Branch: codex/tauri-v2. Base: a78a22b (v1.0.5).
+Version: 2.0.0-alpha.2. Branch: codex/tauri-v2. Base: a78a22b (v1.0.5).
 
 ## Navigation and shared behavior
 
@@ -39,6 +39,16 @@ Word uses a disposable Rust STA COM worker with macros disabled, read-only sourc
 
 ## Delivery and acceptance status
 
-Only basic unit tests are authorized for this turn. No computer use, UI automation, cross-machine tests or full release gate. SPLIT-01 through SPLIT-12 and conversion UI tests remain BLOCKED. Formal future UI validation uses the unchanged rich 40-page fixture, cuts 7/14/21/28/34 and exact 7/7/7/7/6/6 outputs, with per-item evidence and hashes. Native COM/printing and packaging are distinct from basic unit results.
+The latest user authorization requires real direct function/worker tests, without computer use or UI automation. Cross-machine tests and the full UI release gate are not performed. SPLIT-01 through SPLIT-12 and conversion UI tests remain BLOCKED. Formal future UI validation uses the unchanged rich 40-page fixture, cuts 7/14/21/28/34 and exact 7/7/7/7/6/6 outputs, with per-item evidence and hashes. Native COM/printing and packaging are distinct from basic unit results.
 
-Tauri sources are under tauri/ alongside the unchanged 1.x C# solution. 2.x uses a different application identifier and local data folder. Build instructions and artifact limitations are documented in tauri/README.md. No main merge or GitHub release is included.
+Tauri sources are under tauri/ alongside the unchanged 1.x C# solution. 2.x uses a different application identifier and local data folder. Build instructions and artifact limitations are documented in tauri/README.md. No main merge is included. The user separately authorized tagged pending-validation GitHub packages.
+
+
+## 2026-10-06 direct output update
+
+All output-file and output-folder pickers are removed. Outputs are placed in the first selected source folder. Merge uses `<first source stem>_merged.pdf`; PDF to Word uses `<source stem>.docx`; unlocked files use the existing `_unlocked` collision-safe names. Split filenames remain editable. Markdown individual PDFs keep source stems in the first source folder; merged output uses `<first source stem>_merged.pdf`. Duplicate individual names are rejected before execution, and existing files require overwrite consent. Results show actual paths and retain Open Folder.
+
+Functional regression uses actual native workers and read-only independent tools per user authorization. These function tests do not turn UI acceptance into PASS.
+
+
+Primary delivery is a single portable EXE containing the runtime-only ZIP. Resources are prepared in a verified private LocalAppData cache. No external resource folder is required, no project source or test evidence is included, and Word/WebView2 remain system prerequisites. All future packaging must follow AGENTS.md.

@@ -23,9 +23,16 @@ New-Item -ItemType Directory -Path $licenseFolder | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo 'LICENSE.md'),(Join-Path $repo 'NOTICE.md') -Destination $licenseFolder
 Copy-Item -LiteralPath (Join-Path $tauriRoot 'README.md') -Destination $staging
 Copy-Item -Path (Join-Path $tauriRoot 'public\licenses\*') -Destination $licenseFolder -Recurse
-[IO.File]::WriteAllText((Join-Path $staging 'PENDING-VALIDATION.txt'), 'Basic unit tests only. UI, Word, Markdown printing and cross-machine acceptance are not validated. Requires Windows x64 and WebView2 Runtime. Word desktop required for Word conversions.', [Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText((Join-Path $staging 'PENDING-VALIDATION.txt'), 'Real function/worker tests cover PDF split/merge/unlock, Word conversions and advanced Markdown printing. Application UI, DPI and cross-machine acceptance remain unvalidated. Requires Windows x64 and WebView2 Runtime. Word desktop required for Word conversions.', [Text.UTF8Encoding]::new($false))
 $zip = Join-Path $dist "PDF-Forge-$version-windows-x64-portable.zip"
 Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip
-Get-ChildItem (Join-Path $target 'bundle\nsis') -Filter '*.exe' -ErrorAction SilentlyContinue | Copy-Item -Destination $dist
+$previousPayload = $env:PDF_FORGE_PAYLOAD
+try {
+    $env:PDF_FORGE_PAYLOAD = $zip
+    & cargo build --manifest-path (Join-Path $repo 'portable-launcher\Cargo.toml') --target-dir (Join-Path $tauriRoot 'src-tauri\target') --release --locked
+    if ($LASTEXITCODE -ne 0) { throw 'Single-file portable launcher build failed.' }
+    Copy-Item -LiteralPath (Join-Path $tauriRoot 'src-tauri\target\release\pdf-forge-portable.exe') -Destination (Join-Path $dist "PDF-Forge-$version-windows-x64-portable.exe")
+} finally { $env:PDF_FORGE_PAYLOAD = $previousPayload }
+Get-ChildItem (Join-Path $target 'bundle\nsis') -Filter "*_${version}_x64-setup.exe" -ErrorAction SilentlyContinue | Copy-Item -Destination $dist
 Get-ChildItem -LiteralPath $dist -File | Get-FileHash -Algorithm SHA256 | Select-Object Path,Hash | ConvertTo-Json | Set-Content (Join-Path $dist 'hashes.json') -Encoding utf8
 Write-Output $zip

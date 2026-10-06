@@ -24,13 +24,15 @@ npm ci
 npm run tauri -- build
 ```
 
-The build produces a Windows binary and NSIS installer under `src-tauri/target/release`. The installer checks WebView2 and installs its bootstrapper when missing. A portable ZIP must include `resources/markdown`, licenses, the executable and any DLLs Tauri placed beside it (including WebView2Loader.dll for GNU builds); the destination computer needs WebView2 Runtime. Header/footer/page-number print options require Runtime 131+. Use `scripts/Publish-Tauri.ps1` from the repository root to prepare the portable ZIP and a copy of the installer after a successful Tauri build.
+The build produces a Windows binary and NSIS installer under `src-tauri/target/release`. The installer checks WebView2 and installs its bootstrapper when missing. The primary portable delivery is a single self-contained EXE. It embeds a runtime-only archive and automatically prepares verified resources under `%LOCALAPPDATA%/PDFForge2/portable`; no adjacent DLL/resource folders are needed. Word and WebView2 Runtime remain external prerequisites. A supplementary portable ZIP includes `resources/markdown`, licenses, the executable and any DLLs Tauri placed beside it (including WebView2Loader.dll for GNU builds); the destination computer needs WebView2 Runtime. Header/footer/page-number print options require Runtime 131+. Use `scripts/Publish-Tauri.ps1` from the repository root to prepare the single portable EXE, supplementary ZIP and a copy of the installer after a successful Tauri build.
 
 For the complete delivery with Rust and npm third-party notices, use `scripts/Build-Tauri.ps1` from the repository root (requires Python 3 for copying the original notices from installed dependencies), then `scripts/Publish-Tauri.ps1`.
 
 ## Current acceptance status
 
-The user authorized only basic unit tests this turn and explicitly prohibited computer use. No UI, real Word conversion, real Markdown printing, cross-machine validation or full release gate is claimed. SPLIT-01 through SPLIT-12 and conversion UI checks remain BLOCKED. Refer to the local test report and [UX contract](../docs/TAURI_V2_UX.md) for supported and unsupported content.
+On 2026-10-06 the user required direct function tests and prohibited UI operation. Version 2.0.0-alpha.2 fixes file-dialog deadlock, PDF.js compatibility, Word COM initialization/long paths and Markdown renderer script injection. Actual supervised workers are tested with independent output inspection for PDF split/merge/unlock, Word conversions and advanced Markdown printing. No UI, DPI, cross-machine validation or full release gate is claimed. SPLIT-01 through SPLIT-12 and conversion UI checks remain BLOCKED. Refer to the local test report and [UX contract](../docs/TAURI_V2_UX.md) for supported and unsupported content.
+
+Output location pickers have been removed. Every operation writes beside the first selected source; split names remain editable and overwrite requires consent.
 
 Files are processed locally. Existing sources and output files are protected by staging and atomic replacement. Individual batch success is retained when another item fails; merged Markdown output is not committed if any item fails. Cancel or close stops the supervised worker. Passwords remain in temporary job requests for worker IPC only and are never logged.
 

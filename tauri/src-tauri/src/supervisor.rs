@@ -103,6 +103,7 @@ impl JobManager {
         #[cfg(windows)] { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
         let mut child=command.spawn().map_err(|e|ForgeError::new("WORKER_START",e))?;
         #[cfg(windows)] let _tree=match ProcessTree::attach(&child) {Ok(tree)=>tree,Err(error)=>{let _=child.kill();let _=child.wait();return Err(error);}};
+        self.log(&job.event.lock().unwrap().job_id,"worker-start",None);
         let started=Instant::now(); let mut stop:Option<(Instant,&str)>=None;
         loop {
             if let Some(status)=child.try_wait().map_err(|e|ForgeError::new("WORKER_EXIT",e))? {

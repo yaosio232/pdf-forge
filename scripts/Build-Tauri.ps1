@@ -11,7 +11,11 @@ try {
     $metadata = & cargo metadata --manifest-path src-tauri\Cargo.toml --features desktop --locked --format-version 1
     if ($LASTEXITCODE -ne 0) { throw 'Rust dependency metadata failed' }
     [IO.File]::WriteAllText($metadataPath, ($metadata -join "`n"), [Text.UTF8Encoding]::new($false))
-    & python (Join-Path $repo 'scripts\collect-tauri-notices.py') $metadataPath
+    $launcherMetadataPath = Join-Path $repo 'tmp\portable-metadata.json'
+    $launcherMetadata = & cargo metadata --manifest-path (Join-Path $repo 'portable-launcher\Cargo.toml') --locked --format-version 1
+    if ($LASTEXITCODE -ne 0) { throw 'Portable dependency metadata failed' }
+    [IO.File]::WriteAllText($launcherMetadataPath, ($launcherMetadata -join "`n"), [Text.UTF8Encoding]::new($false))
+    & python (Join-Path $repo 'scripts\collect-tauri-notices.py') $metadataPath $launcherMetadataPath
     if ($LASTEXITCODE -ne 0) { throw 'Dependency notice collection failed' }
     & npm.cmd run tauri -- build
     if ($LASTEXITCODE -ne 0) { throw 'Tauri build failed' }

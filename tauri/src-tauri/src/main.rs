@@ -14,11 +14,6 @@ impl Access {
         let full=Path::new(path).canonicalize().map_err(|e|ForgeError::new("SOURCE_MISSING",e))?;
         if !self.files.lock().unwrap().contains(&full){return Err(ForgeError::new("ACCESS","Choose or drop this file first"));} Ok(full)
     }
-    fn output(&self,path:&str,directory:bool)->ForgeResult<()> {
-        let path=Path::new(path); let permitted=self.outputs.lock().unwrap();
-        if permitted.contains(path) || (!directory && path.parent().is_some_and(|parent|permitted.contains(parent))) {Ok(())}
-        else {Err(ForgeError::new("ACCESS","Choose the output location first"))}
-    }
 }
 #[tauri::command]
 fn capabilities()->serde_json::Value {
@@ -27,21 +22,12 @@ fn capabilities()->serde_json::Value {
     serde_json::json!({"word":word,"webview2":cfg!(windows),"version":env!("CARGO_PKG_VERSION")})
 }
 #[tauri::command]
-fn select_files(app:tauri::AppHandle,state:State<AppState>,kind:String)->ForgeResult<Vec<String>> {
+async fn select_files(app:tauri::AppHandle,state:State<'_,AppState>,kind:String)->ForgeResult<Vec<String>> {
     let extensions=match kind.as_str(){"split"|"unlock"|"pdfToWord"=>vec!["pdf"],"merge"=>vec!["pdf","doc","docx"],"markdown"=>vec!["md","markdown"],_=>return Err(ForgeError::new("FILE_TYPE","Unknown operation"))};
-    let selection=app.dialog().file().add_filter("Documents",&extensions).blocking_pick_files().unwrap_or_default();
+    // Blocking native dialogs must not run on Tauri's event-loop thread.
+    let selection=tauri::async_runtime::spawn_blocking(move ||app.dialog().file().add_filter("Documents",&extensions).blocking_pick_files().unwrap_or_default()).await.map_err(|e|ForgeError::new("INTERNAL",e))?;
     let paths:Vec<PathBuf>=selection.into_iter().filter_map(|p|p.into_path().ok()).collect();
     state.access.register(&paths); Ok(paths.iter().map(|p|p.to_string_lossy().into_owned()).collect())
-}
-#[tauri::command]
-fn select_output(app:tauri::AppHandle,state:State<AppState>,directory:bool,extension:String,default_name:String)->ForgeResult<Option<String>> {
-    if !["pdf","docx"].contains(&extension.as_str()){return Err(ForgeError::new("FILE_TYPE","Unsupported output type"));}
-    let dialog=app.dialog().file();
-    let path=if directory{dialog.blocking_pick_folder()}else{dialog.add_filter("Output",&[extension.as_str()]).set_file_name(default_name).blocking_save_file()};
-    let Some(path)=path else{return Ok(None);};
-    let path=path.into_path().map_err(|e|ForgeError::new("PATH",e))?;
-    state.access.outputs.lock().unwrap().insert(path.clone());
-    Ok(Some(path.to_string_lossy().into_owned()))
 }
 #[tauri::command]
 async fn pdf_info(state:State<'_,AppState>,path:String)->ForgeResult<PdfInfo> {
@@ -57,15 +43,17 @@ fn read_pdf(state:State<AppState>,path:String)->ForgeResult<Vec<u8>> {
 }
 #[tauri::command]
 fn start_job(app:tauri::AppHandle,state:State<AppState>,request:JobRequest)->ForgeResult<String> {
-    let (sources,output,is_directory)=match &request {
-        JobRequest::Split{source,directory,..}=>(vec![source],directory,true),
-        JobRequest::Merge{sources,output,..}=>(sources.iter().collect(),output,false),
-        JobRequest::Unlock{sources,directory,..}=>(sources.iter().collect(),directory,true),
-        JobRequest::PdfToWord{source,output,..}=>(vec![source],output,false),
-        JobRequest::Markdown{sources,output,merged,..}=>(sources.iter().collect(),output,!merged),
+    let sources:Vec<_>=match &request{
+        JobRequest::Split{source,..}|JobRequest::PdfToWord{source,..}=>vec![source],
+        JobRequest::Merge{sources,..}|JobRequest::Unlock{sources,..}|JobRequest::Markdown{sources,..}=>sources.iter().collect(),
     };
-    for source in sources {state.access.source(source)?;}
-    state.access.output(output,is_directory)?;
+    for source in sources{state.access.source(source)?;}
+    let request=pdf_forge::output_plan::automatic_output(request)?;
+    let output=match &request {
+        JobRequest::Split{directory,..}|JobRequest::Unlock{directory,..}=>directory,
+        JobRequest::Merge{output,..}|JobRequest::PdfToWord{output,..}|JobRequest::Markdown{output,..}=>output,
+    };
+    state.access.outputs.lock().unwrap().insert(PathBuf::from(output));
     state.manager.start(request,Arc::new(move |event|{let _=app.emit("job-event",event);}))
 }
 #[tauri::command]
@@ -118,6 +106,6 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![capabilities,select_files,select_output,pdf_info,read_pdf,start_job,cancel_job,get_job,log_folder,open_folder])
+        .invoke_handler(tauri::generate_handler![capabilities,select_files,pdf_info,read_pdf,start_job,cancel_job,get_job,log_folder,open_folder])
         .run(tauri::generate_context!()).expect("PDF Forge could not start");
 }

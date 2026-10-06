@@ -39,12 +39,12 @@ import {
 } from "./i18n";
 type State = {
   files: string[];
-  output: string;
   selected: string[];
+  submittedSource?: string;
   job?: JobEvent;
   error?: string;
 };
-const initial = (): State => ({ files: [], output: "", selected: [] });
+const initial = (): State => ({ files: [], selected: [] });
 export default function App() {
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem("forge-language");
@@ -62,10 +62,11 @@ export default function App() {
   });
   const state = states[workspace];
   const locked = busy(state.job);
+  const outputSource = state.submittedSource ?? state.files[0];
   const [cap, setCap] = useState({
     word: false,
     webview2: false,
-    version: "2.0.0-alpha.1",
+    version: "2.0.0-alpha.2",
   });
   const [cuts, setCuts] = useState<number[]>([]);
   const [pages, setPages] = useState(0);
@@ -93,7 +94,14 @@ export default function App() {
   const dragIndex = useRef(-1);
   const splitLoad = useRef(0);
   const update = (w: Workspace, change: Partial<State>) =>
-    setStates((all) => ({ ...all, [w]: { ...all[w], ...change } }));
+    setStates((all) => ({
+      ...all,
+      [w]: {
+        ...all[w],
+        ...change,
+        ...(change.files !== undefined ? { submittedSource: undefined } : {}),
+      },
+    }));
   const report = (w: Workspace, error: unknown) => {
     const e = error as { code?: string };
     update(w, { error: e?.code || "OPERATION_FAILED" });
@@ -154,6 +162,7 @@ export default function App() {
         ...all,
         [w]: {
           ...all[w],
+          submittedSource: undefined,
           files:
             kind === "pdfToWord"
               ? [accepted[0]]
@@ -216,26 +225,6 @@ export default function App() {
       report(workspace, e);
     }
   };
-  const output = async () => {
-    const directory =
-      workspace === "split" ||
-      workspace === "unlock" ||
-      (workspace === "convert" && mode === "markdown" && !merged);
-    try {
-      const result = await invoke<string | null>("select_output", {
-        directory,
-        extension:
-          workspace === "convert" && mode === "pdfToWord" ? "docx" : "pdf",
-        defaultName:
-          workspace === "merge"
-            ? "merged.pdf"
-            : `${stem(state.files[0] || "document")}.${mode === "pdfToWord" && workspace === "convert" ? "docx" : "pdf"}`,
-      });
-      if (result) update(workspace, { output: result });
-    } catch (e) {
-      report(workspace, e);
-    }
-  };
   const parts = ranges(
     pages,
     cuts,
@@ -253,7 +242,12 @@ export default function App() {
       error: null,
     };
     try {
-      update(w, { error: undefined, job: pending });
+      update(w, {
+        error: undefined,
+        job: pending,
+        submittedSource:
+          "source" in request ? request.source : request.sources[0],
+      });
       const jobId = await invoke<string>("start_job", { request });
       owners.current.set(jobId, w);
       update(w, {
@@ -285,7 +279,7 @@ export default function App() {
       retry && !(workspace === "merge" || (workspace === "convert" && merged))
         ? state.job?.items.filter((i) => i.error).map((i) => i.source) || []
         : state.files;
-    if (!files.length || !state.output || (workspace === "split" && !pages)) {
+    if (!files.length || (workspace === "split" && !pages)) {
       update(workspace, { error: "INVALID_INPUT" });
       return;
     }
@@ -294,7 +288,7 @@ export default function App() {
       request = {
         kind: "split",
         source: files[0],
-        directory: state.output,
+        directory: "",
         ranges: single ? [single] : parts,
         overwrite,
       };
@@ -302,7 +296,7 @@ export default function App() {
       request = {
         kind: "merge",
         sources: files,
-        output: state.output,
+        output: "",
         overwrite,
       };
     else if (workspace === "unlock")
@@ -310,20 +304,20 @@ export default function App() {
         kind: "unlock",
         sources: files,
         password,
-        directory: state.output,
+        directory: "",
       };
     else if (mode === "pdfToWord")
       request = {
         kind: "pdfToWord",
         source: files[0],
-        output: state.output,
+        output: "",
         overwrite,
       };
     else
       request = {
         kind: "markdown",
         sources: files,
-        output: state.output,
+        output: "",
         merged,
         overwrite,
         options,
@@ -637,7 +631,6 @@ export default function App() {
                       checked={merged}
                       onChange={(e) => {
                         setMerged(e.target.checked);
-                        update(workspace, { output: "" });
                       }}
                     />
                     {t("merged")}
@@ -689,18 +682,9 @@ export default function App() {
                   </details>
                 </>
               )}
-              <button className="wide" onClick={() => void output()}>
-                <FolderOpen size={18} />
-                {t(
-                  workspace === "split" ||
-                    workspace === "unlock" ||
-                    (workspace === "convert" && mode === "markdown" && !merged)
-                    ? "folder"
-                    : "saveAs",
-                )}
-              </button>
-              <p className="output-path" title={state.output}>
-                {state.output || "—"}
+              <p className="muted">{t("automaticOutput")}</p>
+              <p className="output-path" title={outputSource}>
+                {outputSource?.replace(/[\\/][^\\/]+$/, "") || "—"}
               </p>
               {workspace !== "unlock" && (
                 <label className="check">
@@ -747,9 +731,7 @@ export default function App() {
                             }
                           />
                         </label>
-                        <button disabled={!state.output} onClick={() => run(r)}>
-                          {t("saveOne")}
-                        </button>
+                        <button onClick={() => run(r)}>{t("saveOne")}</button>
                       </div>
                     ))}
                   </div>
@@ -759,7 +741,6 @@ export default function App() {
                 className="primary wide"
                 disabled={
                   !state.files.length ||
-                  !state.output ||
                   !available ||
                   (workspace === "split" && !pages)
                 }

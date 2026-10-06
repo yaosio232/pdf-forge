@@ -1,5 +1,15 @@
 # PDF Merger Looping 完整測試計畫
 
+## 單檔交付檢查（2026-10-06 起）
+
+依 AGENTS.md 後續打包強制規則，主要可攜交付必須為封裝所有本機依賴／離線資源／授權的單檔 EXE。發佈前逐項確認：檔案清單沒有 source／fixture／log／開發目錄；使用者不需保留外部 DLL／resources；快取解開及重複啟動完整；檔案大小、SHA-256 與版本一致；函式／原生工作程序由交付 EXE 呼叫並獨立唯讀檢查。UI gates 仍依當輪是否獲授權實測另行記錄。
+
+## 2026-10-06 2.x 直接功能呼叫修復
+
+使用者回報各功能不能使用，授權真實函式／工作程序／原生轉換直接呼叫回歸，明確禁止操作 UI。本輪逐項重現、修正及重跑 Split／Merge／Unlock／PDF→Word／Word→PDF／進階 Markdown 列印與批次工作、取消、覆寫、來源保護及前後端契約。使用全新 40 頁与固定六份輸出，保存唯讀核對與 hash。取代前輪僅基本 unit test 及本輪必須由 UI 產生輸出的限制；非 UI 功能結果不追認 SPLIT-01～12 UI gate。
+
+本輪亦依使用者要求移除全部輸出位置選擇入口，輸出至當次工作的第一個來源資料夾。沿用既有「上傳到 git tag」授權，修正版以新 `v2.0.0-alpha.2` tag 交付，不覆寫 alpha.1 tag；發佈說明區分實際函式回歸與未執行的 UI／跨機驗收，不夾帶測試證據。
+
 ## 2026-10-06 2.x tag 與待驗預發佈授權
 
 使用者取得 portable EXE 後要求「上傳到git tag」，授權推送 2.x 分支、建立 `v2.0.0-alpha.1` tag 與上傳交付套件至 GitHub 待驗預發佈頁。本輪沿用基本 unit test、無 computer use 的範圍；SPLIT-01 至 SPLIT-12、Word／Markdown 原生轉換、DPI 與跨機驗收仍 BLOCKED。不合併 main；不上传使用者文件、fixture、log 或本機測試證據。一般驗收標準不變。
