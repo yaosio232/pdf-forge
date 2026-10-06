@@ -1,6 +1,6 @@
 # PDF Forge 2.x UX and feature contract
 
-Version: 2.0.0-alpha.2. Branch: codex/tauri-v2. Base: a78a22b (v1.0.5).
+Version: 2.0.0-alpha.3. Branch: codex/tauri-v2. Base: a78a22b (v1.0.5).
 
 ## Navigation and shared behavior
 
@@ -52,3 +52,7 @@ Functional regression uses actual native workers and read-only independent tools
 
 
 Primary delivery is a single portable EXE containing the runtime-only ZIP. Resources are prepared in a verified private LocalAppData cache. No external resource folder is required, no project source or test evidence is included, and Word/WebView2 remain system prerequisites. All future packaging must follow AGENTS.md.
+
+## 2026-10-06 preview and compact controls
+
+Both thumbnail sidebar and main preview expose the same page-gap scissors/cut states. Ctrl+wheel and Ctrl+plus/minus/zero zoom the PDF (25–200%) without browser zoom, preserving the cursor document point. Middle-button drag pans both axes with pointer capture and stops on release/cancellation. Split cards follow the provided white rounded-card design with page icon, range/count, a blue download icon button and editable filename. Language uses a compact globe with a native dropdown, preserving saved preference; unlock uses the provided LockOpen icon. No right-sidebar resizing was requested. Component regressions exercise handlers and backend request contracts; actual application UI acceptance remains BLOCKED.

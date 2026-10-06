@@ -40,6 +40,28 @@ function setup() {
   render(<App />);
 }
 describe("workspace interaction", () => {
+  it("uses a compact globe language selector and the requested open-lock icon",async()=>{
+    setup();
+    const selector=screen.getByRole("combobox",{name:"Language"});
+    expect(selector.parentElement?.querySelector(".lucide-globe")).toBeTruthy();
+    expect(selector.parentElement?.querySelector(".lucide-languages")).toBeNull();
+    fireEvent.change(selector,{target:{value:"zh-TW"}});
+    await waitFor(()=>expect(localStorage.getItem("forge-language")).toBe("zh-TW"));
+    const unlock=screen.getByRole("button",{name:"解除密碼"});
+    expect(unlock.querySelector(".lucide-lock-open")).toBeTruthy();
+  });
+  it("split cards keep editable filenames and save the exact range from an icon button",async()=>{
+    setup();const base=backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation((command:string,args:unknown)=>command==="pdf_info" ? Promise.resolve({pages:40,encrypted:false}) : command==="read_pdf" ? Promise.resolve([1,2]) : command==="start_job" ? Promise.resolve("split-card") : command==="get_job" ? Promise.resolve({jobId:"split-card",status:"completed",phase:"completed",completed:1,total:1,items:[],error:null}) : base(command,args));
+    fireEvent.click(screen.getByRole("button",{name:"Add files"}));
+    const save=await screen.findByRole("button",{name:"Save this range Page 1–40"});
+    const card=save.closest(".range")!;
+    expect(card.querySelector(".lucide-files")).toBeTruthy();
+    expect(save.querySelector(".lucide-download")).toBeTruthy();
+    fireEvent.change(card.querySelector("input")!,{target:{value:"renamed.pdf"}});
+    fireEvent.click(save);
+    await waitFor(()=>expect(backend.invoke.mock.calls.find(([command])=>command==="start_job")?.[1]).toEqual({request:{kind:"split",source:"C:\\documents\\one.pdf",directory:"",ranges:[{first:1,last:40,name:"renamed.pdf"}],overwrite:false}}));
+  });
   it("defaults to Split and exposes four workspaces without previous/next buttons", () => {
     setup();
     expect(screen.getByRole("heading", { name: "Split" })).toBeTruthy();

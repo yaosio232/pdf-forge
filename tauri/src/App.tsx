@@ -5,7 +5,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   Scissors,
   Files,
-  LockKeyhole,
+  LockOpen,
   FileOutput,
   FolderOpen,
   Plus,
@@ -13,7 +13,8 @@ import {
   ArrowDown,
   Trash2,
   GripVertical,
-  Languages,
+  Globe,
+  Download,
 } from "lucide-react";
 import Preview from "./Preview";
 import {
@@ -66,7 +67,7 @@ export default function App() {
   const [cap, setCap] = useState({
     word: false,
     webview2: false,
-    version: "2.0.0-alpha.2",
+    version: "2.0.0-alpha.3",
   });
   const [cuts, setCuts] = useState<number[]>([]);
   const [pages, setPages] = useState(0);
@@ -341,7 +342,7 @@ export default function App() {
   const icon = {
     split: Scissors,
     merge: Files,
-    unlock: LockKeyhole,
+    unlock: LockOpen,
     convert: FileOutput,
   };
   const hint: Record<Workspace, Key> = {
@@ -382,8 +383,8 @@ export default function App() {
             <FolderOpen size={17} />
             {t("logs")}
           </button>
-          <label className="language">
-            <Languages size={17} />
+          <label className="language" title={t("language")}>
+            <Globe size={20} aria-hidden="true" />
             <select
               aria-label={t("language")}
               value={language}
@@ -715,12 +716,18 @@ export default function App() {
                   <div className="range-list">
                     {parts.map((r) => (
                       <div className="range" key={`${r.first}-${r.last}`}>
-                        <span>
+                        <div className="range-header">
+                        <Files size={23} aria-hidden="true" />
+                        <span className="range-title">
                           {t("page")} {r.first}–{r.last}{" "}
                           <small>({r.last - r.first + 1})</small>
                         </span>
-                        <label>
-                          {t("rename")}
+                        <button className="range-save" onClick={() => run(r)}
+                          aria-label={`${t("saveOne")} ${t("page")} ${r.first}–${r.last}`}
+                          title={t("saveOne")}><Download size={23} aria-hidden="true"/></button>
+                        </div>
+                        <label className="range-filename">
+                          <span className="sr-only">{t("rename")} {t("page")} {r.first}–{r.last}</span>
                           <input
                             value={r.name}
                             onChange={(e) =>
@@ -731,7 +738,6 @@ export default function App() {
                             }
                           />
                         </label>
-                        <button onClick={() => run(r)}>{t("saveOne")}</button>
                       </div>
                     ))}
                   </div>
