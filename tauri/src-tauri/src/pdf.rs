@@ -1,7 +1,7 @@
 //! Object-graph PDF operations. Destinations use page object IDs, never guessed offsets.
 use crate::model::{ForgeError, ForgeResult, PdfInfo};
 use lopdf::{dictionary, Dictionary, Document, Object, ObjectId};
-use std::{collections::{BTreeMap, HashSet}, fs::OpenOptions, path::{Path, PathBuf}};
+use std::{collections::{BTreeMap, HashSet}, fs::OpenOptions, io::{BufWriter, Write}, path::{Path, PathBuf}};
 
 fn error(e: impl ToString) -> ForgeError { ForgeError::new("pdf_invalid", e) }
 fn resolve<'a>(d: &'a Document, o: &'a Object) -> ForgeResult<&'a Object> {
@@ -42,7 +42,12 @@ fn save(mut d:Document,path:&Path)->ForgeResult<u32>{
     let count=check(&d)?;
     // create_new prevents existing files, symlinks and source aliases from being overwritten.
     let mut file=OpenOptions::new().write(true).create_new(true).open(path).map_err(|e|ForgeError::new("output_conflict",e))?;
-    d.save_to(&mut file).map_err(error)?;file.sync_all().map_err(error)?;Ok(count)
+    write_buffered(&mut d,&mut file)?;file.sync_all().map_err(error)?;Ok(count)
+}
+fn write_buffered<W:Write>(document:&mut Document,target:&mut W)->ForgeResult<()>{
+    let mut target=BufWriter::new(target);
+    document.save_to(&mut target).map_err(error)?;
+    target.flush().map_err(error)
 }
 fn check(d:&Document)->ForgeResult<u32>{
     let pages=d.get_pages();if pages.is_empty(){return Err(error("PDF has no readable pages"));}
@@ -206,4 +211,79 @@ pub fn unlock_to(source:&Path,password:&str,temp:&Path)->ForgeResult<u32>{
     let ids=d.get_pages().values().copied().collect::<Vec<_>>();
     rebuild_pages(&mut d,&ids)?;
     save(d,temp)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{self, Write};
+
+    #[derive(Default)]
+    struct CountingWriter { calls: usize, bytes: Vec<u8> }
+    impl Write for CountingWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.calls += 1;
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> { Ok(()) }
+    }
+
+    fn rich_twenty_page_document() -> Document {
+        let mut document = Document::with_version("1.7");
+        let pages = document.new_object_id();
+        let font = document.add_object(dictionary! {"Type"=>"Font", "Subtype"=>"Type1", "BaseFont"=>"Helvetica"});
+        let mut page_ids = Vec::new();
+        for page_number in 1..=20 {
+            let content = format!("BT /F1 16 Tf 30 740 Td (PAGE-{page_number:02} Title) Tj 0 -30 Td (Rich paragraph for page {page_number}.) Tj ET");
+            let stream = document.add_object(lopdf::Stream::new(Dictionary::new(), content.into_bytes()));
+            page_ids.push(document.add_object(dictionary! {
+                "Type"=>"Page", "Parent"=>pages, "Contents"=>stream,
+                "MediaBox"=>vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Resources"=>dictionary! {"Font"=>dictionary! {"F1"=>font}}
+            }));
+        }
+        document.objects.insert(pages, dictionary! {"Type"=>"Pages", "Count"=>20, "Kids"=>page_ids.iter().copied().map(Object::Reference).collect::<Vec<_>>()}.into());
+        let catalog = document.add_object(dictionary! {"Type"=>"Catalog", "Pages"=>pages});
+        document.trailer.set("Root", catalog);
+        document
+    }
+
+    #[test]
+    fn pdf_serialization_batches_filesystem_writes_for_twenty_pages() {
+        let mut document = rich_twenty_page_document();
+        let mut writer = CountingWriter::default();
+        write_buffered(&mut document, &mut writer).unwrap();
+
+        assert!(writer.bytes.starts_with(b"%PDF-"));
+        assert!(writer.calls < 100, "expected buffered serialization, got {} underlying writes", writer.calls);
+        let saved = Document::load_mem(&writer.bytes).unwrap();
+        assert_eq!(saved.get_pages().len(), 20);
+        assert!(saved.extract_text(&[20]).unwrap().contains("PAGE-20 Title"));
+    }
+
+    #[test]
+    fn pdf_serialization_propagates_write_errors() {
+        struct FailingWriter;
+        impl Write for FailingWriter {
+            fn write(&mut self, _: &[u8]) -> io::Result<usize> { Err(io::Error::other("simulated disk write failure")) }
+            fn flush(&mut self) -> io::Result<()> { Ok(()) }
+        }
+
+        let mut document = rich_twenty_page_document();
+        assert!(write_buffered(&mut document, &mut FailingWriter).is_err());
+    }
+
+    #[test]
+    fn pdf_serialization_propagates_flush_errors() {
+        struct FailingFlushWriter;
+        impl Write for FailingFlushWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> { Ok(bytes.len()) }
+            fn flush(&mut self) -> io::Result<()> { Err(io::Error::other("simulated flush failure")) }
+        }
+
+        let mut document = rich_twenty_page_document();
+        assert!(write_buffered(&mut document, &mut FailingFlushWriter).is_err());
+    }
+
 }

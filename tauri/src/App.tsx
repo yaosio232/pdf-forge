@@ -72,7 +72,7 @@ export default function App() {
   const [cap, setCap] = useState({
     word: false,
     webview2: false,
-    version: "2.0.0-alpha.3",
+    version: "2.0.0-alpha.4",
   });
   const [cuts, setCuts] = useState<number[]>([]);
   const [pages, setPages] = useState(0);
