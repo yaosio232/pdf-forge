@@ -7,16 +7,21 @@ import {
   Files,
   LockOpen,
   FileOutput,
+  Folder,
   FolderOpen,
-  Plus,
+  FilePlus2,
+  Info,
   ArrowUp,
   ArrowDown,
   Trash2,
   GripVertical,
   Globe,
   Download,
+  RotateCcw,
 } from "lucide-react";
 import Preview from "./Preview";
+import { Button } from "./components/ui/button";
+import { Tooltip } from "./components/ui/tooltip";
 import {
   acceptFiles,
   busy,
@@ -373,27 +378,32 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
-          <button
-            onClick={() =>
-              void invoke<string>("log_folder")
-                .then(open)
-                .catch((e) => report(workspace, e))
-            }
-          >
-            <FolderOpen size={17} />
-            {t("logs")}
-          </button>
-          <label className="language" title={t("language")}>
-            <Globe size={20} aria-hidden="true" />
-            <select
-              aria-label={t("language")}
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as Language)}
+          <Tooltip content={t("logs")}>
+            <Button
+              size="icon"
+              aria-label={t("logs")}
+              onClick={() =>
+                void invoke<string>("log_folder")
+                  .then(open)
+                  .catch((e) => report(workspace, e))
+              }
             >
-              <option value="zh-TW">繁體中文</option>
-              <option value="en">English</option>
-            </select>
-          </label>
+              <FolderOpen size={17} aria-hidden="true" />
+            </Button>
+          </Tooltip>
+          <Tooltip content={t("language")}>
+            <label className="language">
+              <Globe size={20} aria-hidden="true" />
+              <select
+                aria-label={t("language")}
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as Language)}
+              >
+                <option value="zh-TW">繁體中文</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+          </Tooltip>
           <span className="version">v{cap.version}</span>
         </div>
       </header>
@@ -416,18 +426,25 @@ export default function App() {
       </nav>
       <main id="main">
         <div className="workspace-heading">
-          <div>
-            <h1>{t(workspace)}</h1>
-            <p>{t(hint[workspace])}</p>
+          <h1 className="sr-only">{t(workspace)}</h1>
+          <div className="workspace-actions">
+            <Tooltip content={t(hint[workspace])}>
+              <Button size="icon" aria-label={t(hint[workspace])}>
+                <Info size={18} aria-hidden="true" />
+              </Button>
+            </Tooltip>
+            <Tooltip content={t("choose")}>
+              <Button
+                variant="primary"
+                size="icon"
+                aria-label={t("choose")}
+                disabled={locked}
+                onClick={() => void choose()}
+              >
+                <FilePlus2 size={18} aria-hidden="true" />
+              </Button>
+            </Tooltip>
           </div>
-          <button
-            className="primary"
-            disabled={locked}
-            onClick={() => void choose()}
-          >
-            <Plus size={18} />
-            {t("choose")}
-          </button>
         </div>
         {workspace === "convert" && (
           <div className="mode-switch">
@@ -470,7 +487,9 @@ export default function App() {
         <div
           className={`workspace-grid ${workspace === "split" ? "split-grid" : ""}`}
         >
-          <div className="work-surface">
+          <div
+            className={`work-surface ${state.files.length ? "has-files" : "empty-state"}`}
+          >
             {workspace === "split" ? (
               pdf ? (
                 <Preview
@@ -504,20 +523,23 @@ export default function App() {
                   <span>
                     {state.files.length} {t("choose")}
                   </span>
-                  <button
-                    disabled={locked || !state.selected.length}
-                    onClick={() =>
-                      update(workspace, {
-                        files: state.files.filter(
-                          (p) => !state.selected.includes(p),
-                        ),
-                        selected: [],
-                      })
-                    }
-                  >
-                    <Trash2 size={16} />
-                    {t("remove")}
-                  </button>
+                  <Tooltip content={t("remove")}>
+                    <Button
+                      size="icon"
+                      aria-label={t("remove")}
+                      disabled={locked || !state.selected.length}
+                      onClick={() =>
+                        update(workspace, {
+                          files: state.files.filter(
+                            (p) => !state.selected.includes(p),
+                          ),
+                          selected: [],
+                        })
+                      }
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                    </Button>
+                  </Tooltip>
                 </div>
                 {!state.files.length ? (
                   <div className="empty">
@@ -544,63 +566,70 @@ export default function App() {
                           <span className="order">
                             {String(i + 1).padStart(2, "0")}
                           </span>
-                          <span title={path}>
+                          <Tooltip content={path}>
+                          <span className="queue-file" tabIndex={0}>
                             {filename(path)}
-                            <small>{path}</small>
                           </span>
+                          </Tooltip>
                         </label>
                         {(workspace === "merge" ||
                           (workspace === "convert" && mode === "markdown")) && (
                           <div className="reorder">
-                            <button
-                              className="drag-handle"
-                              disabled={locked}
-                              aria-label={`${t("queueHint")} ${filename(path)}`}
-                              onPointerDown={(e) => {
-                                if (e.button !== 0) return;
-                                dragIndex.current = i;
-                                e.currentTarget.setPointerCapture(e.pointerId);
-                                e.currentTarget
-                                  .closest("li")
-                                  ?.classList.add("dragging");
-                              }}
-                              onPointerUp={(e) => {
-                                e.currentTarget
-                                  .closest("li")
-                                  ?.classList.remove("dragging");
-                                const row = document
-                                  .elementFromPoint(e.clientX, e.clientY)
-                                  ?.closest<HTMLElement>("[data-queue-index]");
-                                if (row && !locked)
-                                  move(
-                                    dragIndex.current,
-                                    Number(row.dataset.queueIndex),
-                                  );
-                                dragIndex.current = -1;
-                              }}
-                              onPointerCancel={(e) => {
-                                e.currentTarget
-                                  .closest("li")
-                                  ?.classList.remove("dragging");
-                                dragIndex.current = -1;
-                              }}
-                            >
-                              <GripVertical size={17} />
-                            </button>
-                            <button
-                              disabled={locked || i === 0}
-                              aria-label={`${t("up")} ${filename(path)}`}
-                              onClick={() => move(i, i - 1)}
-                            >
-                              <ArrowUp size={17} />
-                            </button>
-                            <button
-                              disabled={locked || i === state.files.length - 1}
-                              aria-label={`${t("down")} ${filename(path)}`}
-                              onClick={() => move(i, i + 1)}
-                            >
-                              <ArrowDown size={17} />
-                            </button>
+                            <Tooltip content={`${t("queueHint")} ${filename(path)}`}>
+                              <button
+                                className="drag-handle"
+                                disabled={locked}
+                                aria-label={`${t("queueHint")} ${filename(path)}`}
+                                onPointerDown={(e) => {
+                                  if (e.button !== 0) return;
+                                  dragIndex.current = i;
+                                  e.currentTarget.setPointerCapture(e.pointerId);
+                                  e.currentTarget
+                                    .closest("li")
+                                    ?.classList.add("dragging");
+                                }}
+                                onPointerUp={(e) => {
+                                  e.currentTarget
+                                    .closest("li")
+                                    ?.classList.remove("dragging");
+                                  const row = document
+                                    .elementFromPoint(e.clientX, e.clientY)
+                                    ?.closest<HTMLElement>("[data-queue-index]");
+                                  if (row && !locked)
+                                    move(
+                                      dragIndex.current,
+                                      Number(row.dataset.queueIndex),
+                                    );
+                                  dragIndex.current = -1;
+                                }}
+                                onPointerCancel={(e) => {
+                                  e.currentTarget
+                                    .closest("li")
+                                    ?.classList.remove("dragging");
+                                  dragIndex.current = -1;
+                                }}
+                              >
+                                <GripVertical size={17} aria-hidden="true" />
+                              </button>
+                            </Tooltip>
+                            <Tooltip content={`${t("up")} ${filename(path)}`}>
+                              <button
+                                disabled={locked || i === 0}
+                                aria-label={`${t("up")} ${filename(path)}`}
+                                onClick={() => move(i, i - 1)}
+                              >
+                                <ArrowUp size={17} aria-hidden="true" />
+                              </button>
+                            </Tooltip>
+                            <Tooltip content={`${t("down")} ${filename(path)}`}>
+                              <button
+                                disabled={locked || i === state.files.length - 1}
+                                aria-label={`${t("down")} ${filename(path)}`}
+                                onClick={() => move(i, i + 1)}
+                              >
+                                <ArrowDown size={17} aria-hidden="true" />
+                              </button>
+                            </Tooltip>
                           </div>
                         )}
                       </li>
@@ -684,9 +713,12 @@ export default function App() {
                 </>
               )}
               <p className="muted">{t("automaticOutput")}</p>
-              <p className="output-path" title={outputSource}>
-                {outputSource?.replace(/[\\/][^\\/]+$/, "") || "—"}
-              </p>
+              <Tooltip content={outputSource || "—"}>
+                <p className="output-path" tabIndex={0}>
+                  <Folder size={16} aria-hidden="true" />
+                  <span>{outputSource?.replace(/[\\/][^\\/]+$/, "") || "—"}</span>
+                </p>
+              </Tooltip>
               {workspace !== "unlock" && (
                 <label className="check">
                   <input
@@ -710,9 +742,15 @@ export default function App() {
                       onChange={(e) => setPrefix(e.target.value)}
                     />
                   </label>
-                  <button className="wide" onClick={() => setNames({})}>
-                    {t("renameAll")}
-                  </button>
+                  <Tooltip content={t("resetNames")}>
+                    <Button
+                      size="icon"
+                      aria-label={t("resetNames")}
+                      onClick={() => setNames({})}
+                    >
+                      <RotateCcw size={16} aria-hidden="true" />
+                    </Button>
+                  </Tooltip>
                   <div className="range-list">
                     {parts.map((r) => (
                       <div className="range" key={`${r.first}-${r.last}`}>
@@ -722,9 +760,16 @@ export default function App() {
                           {t("page")} {r.first}–{r.last}{" "}
                           <small>({r.last - r.first + 1})</small>
                         </span>
-                        <button className="range-save" onClick={() => run(r)}
-                          aria-label={`${t("saveOne")} ${t("page")} ${r.first}–${r.last}`}
-                          title={t("saveOne")}><Download size={23} aria-hidden="true"/></button>
+                        <Tooltip content={`${t("saveOne")} ${t("page")} ${r.first}–${r.last}`}>
+                          <Button
+                            className="range-save"
+                            size="icon"
+                            aria-label={`${t("saveOne")} ${t("page")} ${r.first}–${r.last}`}
+                            onClick={() => run(r)}
+                          >
+                            <Download size={18} aria-hidden="true" />
+                          </Button>
+                        </Tooltip>
                         </div>
                         <label className="range-filename">
                           <span className="sr-only">{t("rename")} {t("page")} {r.first}–{r.last}</span>
@@ -828,12 +873,14 @@ export default function App() {
                         </span>
                       )}
                       {item.output && (
-                        <button
-                          aria-label={`${t("open")} ${filename(item.output)}`}
-                          onClick={() => void open(item.output!)}
-                        >
-                          <FolderOpen size={16} />
-                        </button>
+                        <Tooltip content={`${t("open")} ${filename(item.output)}`}>
+                          <button
+                            aria-label={`${t("open")} ${filename(item.output)}`}
+                            onClick={() => void open(item.output!)}
+                          >
+                            <FolderOpen size={16} aria-hidden="true" />
+                          </button>
+                        </Tooltip>
                       )}
                     </li>
                   ))}

@@ -12,6 +12,7 @@ vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
   }) }) }),
 }));
 import Preview from "./Preview";
+import { TooltipProvider } from "./components/ui/tooltip";
 beforeEach(() => {
   vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });
   HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -24,10 +25,13 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 async function setup(cuts: number[] = []) {
   const toggle=vi.fn(), onView=vi.fn();
   const props={ data: [1,2,3], cuts, toggle, disabled:false, t:translator("en"), onError:vi.fn(), view:{page:1,scale:1}, onView };
-  const result=render(<Preview {...props}/>);
+  const result=render(previewTree(props));
   await waitFor(() => expect(result.container.querySelectorAll(".pdf-page")).toHaveLength(40));
   await waitFor(() => expect(result.container.querySelector(".pdf-page canvas")?.getAttribute("style")).toContain("600px"));
   return {...result,props,toggle,onView,pages:result.container.querySelector(".pages") as HTMLDivElement};
+}
+function previewTree(props: React.ComponentProps<typeof Preview>) {
+  return <TooltipProvider><Preview {...props}/></TooltipProvider>;
 }
 it("Ctrl wheel zooms the PDF, prevents browser zoom, and leaves ordinary scrolling alone",async()=>{
   const {pages,onView}=await setup();
@@ -67,15 +71,35 @@ it("cancelled middle drag releases pan state and processing disables both sets o
   fireEvent.pointerDown(pages,{button:1,buttons:4,clientX:100,clientY:100});
   fireEvent.pointerCancel(pages);fireEvent.pointerMove(pages,{buttons:4,clientX:100,clientY:20});
   expect(pages.scrollTop).toBe(120);expect(pages.classList.contains("panning")).toBe(false);
-  rerender(<Preview {...props} disabled/>);
+  rerender(previewTree({ ...props, disabled: true }));
   expect([...container.querySelectorAll<HTMLButtonElement>(".thumbnail-cut,.scissors")].every(button=>button.disabled)).toBe(true);
 });
 it("left thumbnail scissors cover every page gap and share cuts with the main preview",async()=>{
   const {container,toggle,rerender,props}=await setup();const thumbnails=within(container.querySelector(".thumbnails") as HTMLElement);
   expect(thumbnails.getAllByRole("button",{name:/Split after page/})).toHaveLength(39);
   fireEvent.click(thumbnails.getByRole("button",{name:"Split after page 7"}));expect(toggle).toHaveBeenCalledWith(7);
-  rerender(<Preview {...props} cuts={[7]}/>);
+  rerender(previewTree({ ...props, cuts: [7] }));
   expect(thumbnails.getByRole("button",{name:"Remove split after page 7"}).getAttribute("aria-pressed")).toBe("true");
   expect(within(container.querySelector(".pages") as HTMLElement).getByRole("button",{name:"Remove split after page 7"}).getAttribute("aria-pressed")).toBe("true");
   expect(thumbnails.queryByRole("button",{name:"Split after page 40"})).toBeNull();
+});
+it("keeps empty page gaps actionable but only shows scissors after selecting them", async () => {
+  const { container, rerender, props } = await setup();
+  const thumbnails = within(container.querySelector(".thumbnails") as HTMLElement);
+  const pages = within(container.querySelector(".pages") as HTMLElement);
+  expect(thumbnails.getAllByRole("button", { name: /Split after page/ })).toHaveLength(39);
+  expect(thumbnails.getByRole("button", { name: "Split after page 7" }).querySelector(".lucide-scissors")).toBeNull();
+  expect(pages.getByRole("button", { name: "Split after page 7" }).querySelector(".lucide-scissors")).toBeNull();
+  rerender(previewTree({ ...props, cuts: [7] }));
+  expect(thumbnails.getByRole("button", { name: "Remove split after page 7" }).querySelector(".lucide-scissors")).toBeTruthy();
+  expect(pages.getByRole("button", { name: "Remove split after page 7" }).querySelector(".lucide-scissors")).toBeTruthy();
+});
+it("does not change cuts for a middle-button page-gap click", async () => {
+  const { container, toggle } = await setup();
+  const pages = within(container.querySelector(".pages") as HTMLElement);
+  fireEvent.click(
+    pages.getByRole("button", { name: "Split after page 7" }),
+    { button: 1 },
+  );
+  expect(toggle).not.toHaveBeenCalled();
 });

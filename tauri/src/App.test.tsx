@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
   render,
   screen,
@@ -20,10 +20,22 @@ vi.mock("@tauri-apps/api/webview", () => ({
 }));
 vi.mock("./Preview", () => ({ default: () => <div>Local PDF preview</div> }));
 import App from "./App";
+import { TooltipProvider } from "./components/ui/tooltip";
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+});
 afterEach(() => {
   cleanup();
   localStorage.clear();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 function setup() {
   localStorage.setItem("forge-language", "en");
@@ -37,14 +49,34 @@ function setup() {
       ]);
     return Promise.resolve();
   });
-  render(<App />);
+  render(
+    <TooltipProvider>
+      <App />
+    </TooltipProvider>,
+  );
 }
 describe("workspace interaction", () => {
+  it("shows a keyboard tooltip for the compact log action", async () => {
+    setup();
+    fireEvent.focus(screen.getByRole("button", { name: "Open logs" }));
+    expect((await screen.findByRole("tooltip")).textContent).toContain("Open logs");
+  });
+  it("keeps the workspace heading semantic while moving help and file choice into labeled icon controls", async () => {
+    setup();
+    expect(screen.getByRole("heading", { name: "Split" }).className).toContain("sr-only");
+    const help = screen.getByRole("button", {
+      name: "Scroll through your PDF and choose scissors between pages.",
+    });
+    fireEvent.focus(help);
+    expect((await screen.findByRole("tooltip")).textContent).toContain("Scroll through your PDF");
+    expect(screen.getByRole("button", { name: "Add files" }).querySelector(".lucide-file-plus2")).toBeTruthy();
+  });
   it("uses a compact globe language selector and the requested open-lock icon",async()=>{
     setup();
     const selector=screen.getByRole("combobox",{name:"Language"});
     expect(selector.parentElement?.querySelector(".lucide-globe")).toBeTruthy();
     expect(selector.parentElement?.querySelector(".lucide-languages")).toBeNull();
+    expect(selector.parentElement?.getAttribute("title")).toBeNull();
     fireEvent.change(selector,{target:{value:"zh-TW"}});
     await waitFor(()=>expect(localStorage.getItem("forge-language")).toBe("zh-TW"));
     const unlock=screen.getByRole("button",{name:"解除密碼"});
@@ -55,6 +87,11 @@ describe("workspace interaction", () => {
     backend.invoke.mockImplementation((command:string,args:unknown)=>command==="pdf_info" ? Promise.resolve({pages:40,encrypted:false}) : command==="read_pdf" ? Promise.resolve([1,2]) : command==="start_job" ? Promise.resolve("split-card") : command==="get_job" ? Promise.resolve({jobId:"split-card",status:"completed",phase:"completed",completed:1,total:1,items:[],error:null}) : base(command,args));
     fireEvent.click(screen.getByRole("button",{name:"Add files"}));
     const save=await screen.findByRole("button",{name:"Save this range Page 1–40"});
+    expect(
+      screen.getByRole("button", {
+        name: "Reset all filenames from the current prefix",
+      }),
+    ).toBeTruthy();
     const card=save.closest(".range")!;
     expect(card.querySelector(".lucide-files")).toBeTruthy();
     expect(save.querySelector(".lucide-download")).toBeTruthy();
@@ -68,6 +105,16 @@ describe("workspace interaction", () => {
     for (const name of ["Merge", "Unlock", "Convert"])
       expect(screen.getByRole("button", { name })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /previous|next/i })).toBeNull();
+  });
+  it("switches from the empty drop state to a compact loaded workspace", async () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+    expect(document.querySelector(".work-surface.empty-state")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add files" }));
+    await waitFor(() =>
+      expect(document.querySelector(".work-surface.has-files")).toBeTruthy(),
+    );
+    expect(document.querySelector(".work-surface.empty-state")).toBeNull();
   });
   it("keeps merge inputs when switching workspace and supports keyboard reorder/delete", async () => {
     setup();
@@ -84,6 +131,39 @@ describe("workspace interaction", () => {
     fireEvent.click(screen.getAllByRole("checkbox")[0]);
     fireEvent.click(screen.getByRole("button", { name: "Remove selected" }));
     expect(screen.queryByText("two.pdf")).toBeNull();
+  });
+  it("keeps source paths compact and exposes them through accessible tooltips", async () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add files" }));
+    const source = await waitFor(() => {
+      const file = document.querySelector<HTMLElement>(".queue-file");
+      expect(file).toBeTruthy();
+      return file!;
+    });
+    expect(source.getAttribute("title")).toBeNull();
+    expect(document.querySelector(".queue-select small")).toBeNull();
+    fireEvent.focus(source);
+    expect((await screen.findByRole("tooltip")).textContent).toContain(
+      "C:\\documents\\one.pdf",
+    );
+    expect(document.querySelector(".output-path")?.getAttribute("title")).toBeNull();
+    expect(document.querySelector(".output-path .lucide-folder")).toBeTruthy();
+  });
+  it("keeps the automatic output folder reachable by keyboard", async () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Merge" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add files" }));
+    const output = await waitFor(() => {
+      const path = document.querySelector<HTMLElement>(".output-path");
+      expect(path).toBeTruthy();
+      return path!;
+    });
+    expect(output.tabIndex).toBe(0);
+    fireEvent.focus(output);
+    expect((await screen.findByRole("tooltip")).textContent).toContain(
+      "C:\\documents\\one.pdf",
+    );
   });
   it("does not start without inputs and disables unavailable Word conversion", async () => {
     setup();

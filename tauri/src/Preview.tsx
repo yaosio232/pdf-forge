@@ -5,7 +5,9 @@ import {
   type PDFDocumentProxy,
 } from "pdfjs-dist/legacy/build/pdf.mjs";
 import worker from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
-import { Scissors } from "lucide-react";
+import { MoveHorizontal, Scissors } from "lucide-react";
+import { Button } from "./components/ui/button";
+import { Tooltip } from "./components/ui/tooltip";
 import type { Key } from "./i18n";
 GlobalWorkerOptions.workerSrc = worker;
 function Page({
@@ -232,7 +234,15 @@ export default function Preview({
           />
         </label>
         <span>{Math.round(scale * 100)}%</span>
-        <button onClick={() => void fit()}>{t("fit")}</button>
+        <Tooltip content={t("fit")}>
+          <Button
+            size="icon"
+            aria-label={t("fit")}
+            onClick={() => void fit()}
+          >
+            <MoveHorizontal size={17} aria-hidden="true" />
+          </Button>
+        </Tooltip>
         <span className="muted">
           {t("rendered")} {ready.size}/{doc?.numPages || 0}
         </span>
@@ -253,12 +263,23 @@ export default function Preview({
                 <Page doc={doc} page={i + 1} scale={0.14} />
                 <span>{i + 1}</span>
               </button>
-              {i<doc.numPages-1 && <button
-                className={`thumbnail-cut ${cuts.includes(i+1)?"active":""}`}
-                disabled={disabled} aria-pressed={cuts.includes(i+1)}
-                aria-label={`${t(cuts.includes(i+1)?"uncut":"cut")} ${i+1}`}
-                title={`${t(cuts.includes(i+1)?"uncut":"cut")} ${i+1}`}
-                onClick={()=>toggle(i+1)}><Scissors size={17} aria-hidden="true"/></button>}
+              {i<doc.numPages-1 && (() => {
+                const selected = cuts.includes(i + 1);
+                const label = `${t(selected ? "uncut" : "cut")} ${i + 1}`;
+                return <Tooltip content={label}>
+                  <button
+                    className={`thumbnail-cut ${selected ? "active" : ""}`}
+                    disabled={disabled}
+                    aria-pressed={selected}
+                    aria-label={label}
+                    onClick={(event) => {
+                      if (event.button === 0) toggle(i + 1);
+                    }}
+                  >
+                    {selected && <Scissors size={17} aria-hidden="true" />}
+                  </button>
+                </Tooltip>;
+              })()}
               </div>
             ))}
           </aside>
@@ -298,17 +319,24 @@ export default function Preview({
                 <span className="page-caption">
                   {t("page")} {i + 1}
                 </span>
-                {i < doc.numPages - 1 && (
-                  <button
-                    disabled={disabled}
-                    className={`scissors ${cuts.includes(i + 1) ? "active" : ""}`}
-                    aria-pressed={cuts.includes(i + 1)}
-                    onClick={() => toggle(i + 1)}
-                  >
-                    <Scissors size={18} />
-                    {t(cuts.includes(i + 1) ? "uncut" : "cut")} {i + 1}
-                  </button>
-                )}
+                {i < doc.numPages - 1 && (() => {
+                  const selected = cuts.includes(i + 1);
+                  const label = `${t(selected ? "uncut" : "cut")} ${i + 1}`;
+                  return <Tooltip content={label}>
+                    <button
+                      disabled={disabled}
+                      className={`scissors ${selected ? "active" : ""}`}
+                      aria-pressed={selected}
+                      aria-label={label}
+                      onClick={(event) => {
+                        if (event.button === 0) toggle(i + 1);
+                      }}
+                    >
+                      {selected && <Scissors size={18} aria-hidden="true" />}
+                      {label}
+                    </button>
+                  </Tooltip>;
+                })()}
               </div>
             ))}
           </div>
