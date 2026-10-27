@@ -3,6 +3,8 @@ use sha2::{Digest,Sha256};
 use std::{fs,io::{self,Cursor,Read},path::{Path,PathBuf},process::Command};
 
 static PAYLOAD:&[u8]=include_bytes!(env!("PDF_FORGE_PAYLOAD"));
+const APP_EXE:&str=match option_env!("PDF_FORGE_APP_EXE"){Some(name)=>name,None=>"PDF Forge 2.exe"};
+const CACHE_NAME:&str=match option_env!("PDF_FORGE_CACHE_NAME"){Some(name)=>name,None=>"PDFForge2"};
 type Result<T> = std::result::Result<T,Box<dyn std::error::Error>>;
 fn digest(bytes:&[u8])->String{format!("{:x}",Sha256::digest(bytes))}
 fn plain_tree(root:&Path)->Result<bool>{
@@ -43,7 +45,7 @@ fn entries(root:&Path,extract:bool)->Result<bool>{
     Ok(true)
 }
 fn prepare()->Result<PathBuf>{
-    let base=std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("PDFForge2").join("portable");
+    let base=std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join(CACHE_NAME).join("portable");
     fs::create_dir_all(&base)?;
     let cache=base.join(format!("{}-{}",env!("CARGO_PKG_VERSION"),digest(PAYLOAD)));
     if cache.is_dir() && entries(&cache,false)?{return Ok(cache);}
@@ -64,7 +66,7 @@ fn run()->Result<i32>{
         fs::write(result,serde_json::to_vec_pretty(&serde_json::json!({"directory":directory,"payloadSha256":digest(PAYLOAD),"version":env!("CARGO_PKG_VERSION")}))?)?;
         return Ok(0);
     }
-    let status=Command::new(directory.join("PDF Forge 2.exe")).args(arguments)
+    let status=Command::new(directory.join(APP_EXE)).args(arguments)
         .env("PDF_FORGE_MARKDOWN_ASSETS",directory.join("resources/markdown")).status()?;
     Ok(status.code().unwrap_or(1))
 }
@@ -73,7 +75,7 @@ fn main(){
         let detail=format!("PDF Forge could not prepare its bundled resources: {error}");
         #[cfg(windows)]unsafe{
             #[link(name="user32")]extern "system"{fn MessageBoxW(window:*mut std::ffi::c_void,text:*const u16,title:*const u16,kind:u32)->i32;}
-            let text:Vec<u16>=detail.encode_utf16().chain(Some(0)).collect();let title:Vec<u16>="PDF Forge 2".encode_utf16().chain(Some(0)).collect();
+            let text:Vec<u16>=detail.encode_utf16().chain(Some(0)).collect();let title:Vec<u16>="PDF Forge".encode_utf16().chain(Some(0)).collect();
             MessageBoxW(std::ptr::null_mut(),text.as_ptr(),title.as_ptr(),0x10);
         }
         #[cfg(not(windows))]eprintln!("{detail}");
@@ -93,9 +95,14 @@ fn main(){
     }
     #[test]fn payload_contains_runtime_and_no_project_sources_or_evidence(){
         let mut zip=zip::ZipArchive::new(Cursor::new(PAYLOAD)).unwrap();let mut names=std::collections::HashSet::new();
-        for i in 0..zip.len(){let entry=zip.by_index(i).unwrap();let name=entry.name().to_owned();
+        for i in 0..zip.len(){let entry=zip.by_index(i).unwrap();let name=entry.name().unwrap().into_owned();
             assert!(!["TestResults/","tests/","tauri/","node_modules/","target/","src/",".git/"].iter().any(|prefix|name.starts_with(prefix)));names.insert(name);
         }
-        for name in ["PDF Forge 2.exe","WebView2Loader.dll","resources/markdown/renderer.js","resources/markdown/renderer.css","licenses/LICENSE.md"]{assert!(names.contains(name));}
+        assert!(names.contains(APP_EXE));
+        if APP_EXE=="PDF Forge 2.exe" {
+            for name in ["WebView2Loader.dll","resources/markdown/renderer.js","resources/markdown/renderer.css","licenses/LICENSE.md"]{assert!(names.contains(name));}
+        } else {
+            for name in ["poppler/Library/bin/pdftoppm.exe","LICENSE.md"]{assert!(names.contains(name));}
+        }
     }
 }

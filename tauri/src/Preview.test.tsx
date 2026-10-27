@@ -3,10 +3,11 @@ import React from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { translator } from "./i18n";
+const loader = vi.hoisted(() => ({numPages: 40}));
 vi.mock("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url", () => ({ default: "local-worker" }));
 vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
   GlobalWorkerOptions: {},
-  getDocument: () => ({ destroy: vi.fn(), promise: Promise.resolve({ numPages: 40, getPage: async () => ({
+  getDocument: () => ({ destroy: vi.fn(), promise: Promise.resolve({ numPages: loader.numPages, getPage: async () => ({
     getViewport: ({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale }),
     render: () => ({ promise: Promise.resolve(), cancel: vi.fn() }),
   }) }) }),
@@ -14,6 +15,7 @@ vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
 import Preview from "./Preview";
 import { TooltipProvider } from "./components/ui/tooltip";
 beforeEach(() => {
+  loader.numPages = 40;
   vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });
   HTMLElement.prototype.scrollIntoView = vi.fn();
   HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -22,6 +24,13 @@ beforeEach(() => {
   vi.stubGlobal("PointerEvent", MouseEvent);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it("rejects excessive PDF.js page counts even when metadata undercounts a malformed page tree", async () => {
+  loader.numPages = 1001;
+  const onError = vi.fn();
+  const view=render(previewTree({data:[1,2,3],cuts:[],toggle:vi.fn(),disabled:false,t:translator("en"),onError,view:{page:1,scale:1},onView:vi.fn()}));
+  await waitFor(() => expect(onError).toHaveBeenCalledOnce());
+  expect(view.container.querySelectorAll(".pdf-page,.thumbnail-page")).toHaveLength(0);
+});
 async function setup(cuts: number[] = []) {
   const toggle=vi.fn(), onView=vi.fn();
   const props={ data: [1,2,3], cuts, toggle, disabled:false, t:translator("en"), onError:vi.fn(), view:{page:1,scale:1}, onView };

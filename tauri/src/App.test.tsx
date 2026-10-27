@@ -7,6 +7,7 @@ import {
   fireEvent,
   waitFor,
   cleanup,
+  act,
 } from "@testing-library/react";
 const backend = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: backend.invoke }));
@@ -49,13 +50,62 @@ function setup() {
       ]);
     return Promise.resolve();
   });
-  render(
+  return render(
     <TooltipProvider>
       <App />
     </TooltipProvider>,
   );
 }
 describe("workspace interaction", () => {
+  it("cancels superseded metadata and never reads the stale document", async () => {
+    setup();
+    const base = backend.invoke.getMockImplementation()!;
+    let resolveOld!: (value: { pages: number; encrypted: boolean }) => void;
+    let selection = 0;
+    backend.invoke.mockImplementation((command: string, args: unknown) => {
+      if (command === "select_files") return Promise.resolve([`C:\\documents\\${++selection}.pdf`]);
+      if (command === "pdf_info") return (args as {path: string}).path.endsWith("1.pdf")
+        ? new Promise(resolve => { resolveOld = resolve; })
+        : Promise.resolve({pages: 40, encrypted: false});
+      if (command === "read_pdf") return Promise.resolve([1, 2]);
+      return base(command, args);
+    });
+    fireEvent.click(screen.getByRole("button", {name: "Add files"}));
+    await waitFor(() => expect(resolveOld).toBeTypeOf("function"));
+    const oldRequest = backend.invoke.mock.calls.find(([command]) => command === "pdf_info")![1] as {requestId: string};
+    expect(oldRequest.requestId).toBeTypeOf("string");
+    fireEvent.click(screen.getByRole("button", {name: "Add files"}));
+    await screen.findByRole("button", {name: "Save this range Page 1–40"});
+    expect(backend.invoke).toHaveBeenCalledWith("cancel_pdf_info", {requestId: oldRequest.requestId});
+    await act(async () => resolveOld({pages: 999, encrypted: false}));
+    expect(backend.invoke.mock.calls.filter(([command]) => command === "read_pdf").map(([,args]) => args)).toEqual([{path: "C:\\documents\\2.pdf"}]);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("clearing a loading PDF cancels its request and discards its eventual result", async () => {
+    setup();
+    const base = backend.invoke.getMockImplementation()!;
+    let resolveInfo!: (value: {pages: number; encrypted: boolean}) => void;
+    backend.invoke.mockImplementation((command: string, args: unknown) => command === "pdf_info"
+      ? new Promise(resolve => {resolveInfo = resolve;}) : base(command, args));
+    fireEvent.click(screen.getByRole("button", {name: "Add files"}));
+    await waitFor(() => expect(resolveInfo).toBeTypeOf("function"));
+    const request = backend.invoke.mock.calls.find(([command]) => command === "pdf_info")![1];
+    fireEvent.click(screen.getByRole("button", {name: "Clear document"}));
+    expect(backend.invoke).toHaveBeenCalledWith("cancel_pdf_info", {requestId: request.requestId});
+    await act(async () => resolveInfo({pages: 40, encrypted: false}));
+    expect(backend.invoke.mock.calls.some(([command]) => command === "read_pdf")).toBe(false);
+    expect(screen.queryByRole("button", {name: /Save this range/})).toBeNull();
+  });
+  it("unmounting cancels a pending metadata request", async () => {
+    const view = setup();
+    const base = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation((command: string, args: unknown) => command === "pdf_info" ? new Promise(() => {}) : base(command, args));
+    fireEvent.click(screen.getByRole("button", {name: "Add files"}));
+    await waitFor(() => expect(backend.invoke.mock.calls.some(([command]) => command === "pdf_info")).toBe(true));
+    const request = backend.invoke.mock.calls.find(([command]) => command === "pdf_info")![1];
+    view.unmount();
+    expect(backend.invoke).toHaveBeenCalledWith("cancel_pdf_info", {requestId: request.requestId});
+  });
   it("shows a keyboard tooltip for the compact log action", async () => {
     setup();
     fireEvent.focus(screen.getByRole("button", { name: "Open logs" }));

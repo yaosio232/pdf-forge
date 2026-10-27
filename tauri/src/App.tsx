@@ -72,7 +72,7 @@ export default function App() {
   const [cap, setCap] = useState({
     word: false,
     webview2: false,
-    version: "2.0.0-alpha.4",
+    version: "2.0.0-alpha.5",
   });
   const [cuts, setCuts] = useState<number[]>([]);
   const [pages, setPages] = useState(0);
@@ -99,6 +99,23 @@ export default function App() {
   const owners = useRef(new Map<string, Workspace>());
   const dragIndex = useRef(-1);
   const splitLoad = useRef(0);
+  const metadataRequest = useRef<string | undefined>(undefined);
+  const cancelMetadata = () => {
+    ++splitLoad.current;
+    const requestId = metadataRequest.current;
+    metadataRequest.current = undefined;
+    if (requestId) void invoke("cancel_pdf_info", { requestId }).catch(() => {});
+  };
+  const clearDocument = () => {
+    cancelMetadata();
+    update("split", {files: [], error: undefined});
+    setPdf(undefined);
+    setPages(0);
+    setCuts([]);
+    setNames({});
+    setPrefix("");
+    setPreviewView({page: 1, scale: 1});
+  };
   const update = (w: Workspace, change: Partial<State>) =>
     setStates((all) => ({
       ...all,
@@ -116,6 +133,7 @@ export default function App() {
     document.documentElement.lang = language;
     localStorage.setItem("forge-language", language);
   }, [language]);
+  useEffect(() => () => cancelMetadata(), []);
   useEffect(() => {
     void invoke<typeof cap>("capabilities")
       .then(setCap)
@@ -142,7 +160,10 @@ export default function App() {
     if (!accepted.length) return;
     if (w === "split") {
       const path = accepted[0];
+      cancelMetadata();
       const load = ++splitLoad.current;
+      const requestId = crypto.randomUUID();
+      metadataRequest.current = requestId;
       update(w, { files: [path], error: undefined });
       setPdf(undefined);
       setPreviewView({ page: 1, scale: 1 });
@@ -153,8 +174,9 @@ export default function App() {
       try {
         const info = await invoke<{ pages: number; encrypted: boolean }>(
           "pdf_info",
-          { path },
+          { path, requestId },
         );
+        if (load !== splitLoad.current) return;
         if (info.encrypted) throw { code: "PDF_ENCRYPTED" };
         const bytes = await invoke<number[]>("read_pdf", { path });
         if (load !== splitLoad.current) return;
@@ -162,6 +184,8 @@ export default function App() {
         setPdf(bytes);
       } catch (e) {
         if (load === splitLoad.current) report(w, e);
+      } finally {
+        if (metadataRequest.current === requestId) metadataRequest.current = undefined;
       }
     } else
       setStates((all) => ({
@@ -428,6 +452,13 @@ export default function App() {
         <div className="workspace-heading">
           <h1 className="sr-only">{t(workspace)}</h1>
           <div className="workspace-actions">
+            {workspace === "split" && state.files.length > 0 && (
+              <Tooltip content={t("clearDocument")}>
+                <Button size="icon" aria-label={t("clearDocument")} disabled={locked} onClick={clearDocument}>
+                  <Trash2 size={18} aria-hidden="true" />
+                </Button>
+              </Tooltip>
+            )}
             <Tooltip content={t(hint[workspace])}>
               <Button size="icon" aria-label={t(hint[workspace])}>
                 <Info size={18} aria-hidden="true" />

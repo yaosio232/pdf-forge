@@ -154,7 +154,13 @@ export default function Preview({
     setReady(new Set());
     void task.promise
       .then((value) => {
-        if (!cancelled) setDoc(value);
+        if (cancelled) return;
+        if (!Number.isSafeInteger(value.numPages) || value.numPages < 1 || value.numPages > 1000) {
+          void task.destroy();
+          onError();
+          return;
+        }
+        setDoc(value);
       })
       .catch(() => {
         if (!cancelled) onError();

@@ -30,6 +30,18 @@ For the complete delivery with Rust and npm third-party notices, use `scripts/Bu
 
 ## Current acceptance status
 
+### Issue #2 security maintenance (2026-10-27)
+
+Windows GNU LLVM builds must pass the matching compiler runtime directory and its original license to `Publish-Tauri.ps1 -NativeRuntimeDirectory <LLVM bin> -NativeRuntimeLicense <LLVM LICENSE.TXT>`. The inner application carries `libunwind.dll`; the outer single-file launcher is linked statically so it can start before extraction. Windows x64 and WebView2 Runtime remain prerequisites. The parallel 1.x maintenance release is v1.0.5.2 on `codex/issue-2-security-v1`; this v2 release is v2.0.0-alpha.5 on `codex/issue-2-security-v2`. The older main branch and previous tags do not contain these repairs.
+
+The security branch updates PDF.js to 6.4.299 and the affected renderer/build dependencies. Preview uses only the local PDF.js canvas API and packaged worker, CMaps, standard fonts and WASM assets. It does not load the PDF.js viewer scripting manager; `enableScripting` is a viewer setting, not a `getDocument()` initialization option. The application CSP continues to prohibit inline/evaluated scripts and external connections.
+
+Metadata, page counts, encryption detection and generated PDF validation run in supervised native workers. Metadata preview inputs are limited to 256 MiB and 1,000 pages. Each metadata worker is gated until a Windows Job Object is attached with 1 GiB memory and 10 seconds CPU limits; the supervisor enforces a 15 second wall deadline. Limits failing to initialize stop the operation. This is process and resource isolation, not a claim of a restricted-token security sandbox. Other workflows retain their existing deadlines and output transactions.
+
+`pdf_info` accepts `{path, requestId}` and returns `{pages, encrypted}`. `cancel_pdf_info` accepts `{requestId}` and is idempotent. Replacing/clearing the source or closing the app cancels pending metadata; stale replies cannot update the current preview. Worker responses are bounded and a nonzero exit is always an error. Documents, request contents and local evidence remain on the computer.
+
+Reproduce the real browser/canvas check after building frontend assets with `scripts/security_fixtures.py <local-results-directory>` (Python with reportlab/pypdf), then `node scripts/Verify-PdfJs-Security.mjs <same-directory> [Chrome-or-Edge-path]`. It covers 40 pages, full/thumbnail canvases, CJK text and an inert PDF JavaScript marker with the production CSP. It is direct function evidence, not desktop UI acceptance. Native worker and full application acceptance are recorded separately in local TestResults. This maintenance task does not publish binaries, merge main, close issues or retroactively pass earlier UI gates.
+
 On 2026-10-06 the user required direct function tests and prohibited UI operation. Version 2.0.0-alpha.2 fixes file-dialog deadlock, PDF.js compatibility, Word COM initialization/long paths and Markdown renderer script injection. Actual supervised workers are tested with independent output inspection for PDF split/merge/unlock, Word conversions and advanced Markdown printing. No UI, DPI, cross-machine validation or full release gate is claimed. SPLIT-01 through SPLIT-12 and conversion UI checks remain BLOCKED. Refer to the local test report and [UX contract](../docs/TAURI_V2_UX.md) for supported and unsupported content.
 
 Output location pickers have been removed. Every operation writes beside the first selected source; split names remain editable and overwrite requires consent.

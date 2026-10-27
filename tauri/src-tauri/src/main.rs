@@ -30,16 +30,20 @@ async fn select_files(app:tauri::AppHandle,state:State<'_,AppState>,kind:String)
     state.access.register(&paths); Ok(paths.iter().map(|p|p.to_string_lossy().into_owned()).collect())
 }
 #[tauri::command]
-async fn pdf_info(state:State<'_,AppState>,path:String)->ForgeResult<PdfInfo> {
+async fn pdf_info(state:State<'_,AppState>,path:String,request_id:String)->ForgeResult<PdfInfo> {
     let source=state.access.source(&path)?;
-    tauri::async_runtime::spawn_blocking(move ||pdf_forge::pdf::info(&source)).await.map_err(|e|ForgeError::new("INTERNAL",e))?
+    let manager=state.manager.clone();
+    manager.register_pdf_info(&request_id)?;
+    tauri::async_runtime::spawn_blocking(move ||manager.pdf_info(&request_id,source)).await.map_err(|e|ForgeError::new("INTERNAL",e))?
+}
+#[tauri::command]
+fn cancel_pdf_info(state:State<AppState>,request_id:String)->ForgeResult<()> {
+    state.manager.cancel_pdf_info(&request_id)
 }
 #[tauri::command]
 fn read_pdf(state:State<AppState>,path:String)->ForgeResult<Vec<u8>> {
     let path=state.access.source(&path)?;
-    if std::fs::metadata(&path).map_err(|e|ForgeError::new("SOURCE_MISSING",e))?.len()>256*1024*1024 {return Err(ForgeError::new("FILE_SIZE","Preview limit is 256 MiB"));}
-    if !path.extension().unwrap_or_default().eq_ignore_ascii_case("pdf"){return Err(ForgeError::new("FILE_TYPE","Preview requires a PDF"));}
-    std::fs::read(path).map_err(|e|ForgeError::new("SOURCE_MISSING",e))
+    pdf_forge::pdf::preview_bytes(&path)
 }
 #[tauri::command]
 fn start_job(app:tauri::AppHandle,state:State<AppState>,request:JobRequest)->ForgeResult<String> {
@@ -95,6 +99,7 @@ fn main() {
             let state=window.state::<AppState>();
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop{paths,..})=event {state.access.register(paths);}
             if let tauri::WindowEvent::CloseRequested{api,..}=event {
+                state.manager.stop_accepting();
                 if state.manager.active() {
                     api.prevent_close();
                     if !state.closing.swap(true,Ordering::SeqCst) {
@@ -106,6 +111,6 @@ fn main() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![capabilities,select_files,pdf_info,read_pdf,start_job,cancel_job,get_job,log_folder,open_folder])
+        .invoke_handler(tauri::generate_handler![capabilities,select_files,pdf_info,cancel_pdf_info,read_pdf,start_job,cancel_job,get_job,log_folder,open_folder])
         .run(tauri::generate_context!()).expect("PDF Forge could not start");
 }

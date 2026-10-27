@@ -1,6 +1,6 @@
 [package]
 name = "pdf-forge"
-version = "2.0.0-alpha.4"
+version = "2.0.0-alpha.5"
 edition = "2021"
 license = "AGPL-3.0-only"
 default-run = "pdf-forge"
@@ -27,7 +27,7 @@ tempfile = "3"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 same-file = "1"
-zip = { version = "4", default-features = false, features = ["deflate"] }
+zip = { version = "=9.0.0", default-features = false, features = ["deflate"] }
 roxmltree = "0.21"
 tauri = { version = "2", optional = true , features = [] }
 tauri-plugin-dialog = { version = "2", optional = true }

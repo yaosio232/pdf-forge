@@ -6,6 +6,7 @@ const en = {
   convert: "Convert",
   local: "Your documents stay on this computer",
   choose: "Add files",
+  clearDocument: "Clear document",
   empty: "Choose files or drop them here",
   splitHint: "Scroll through your PDF and choose scissors between pages.",
   queueHint:
@@ -82,6 +83,7 @@ const en = {
   committing: "Saving output",
 };
 const zh: typeof en = {
+  clearDocument: "清除文件",
   split: "分割",
   merge: "合併",
   unlock: "解除密碼",
@@ -176,6 +178,10 @@ const errorMessages: Record<string, [string, string]> = {
   FILE_SIZE: [
     "The document exceeds the supported size limit.",
     "文件大小超過支援限制。",
+  ],
+  FILE_PAGES: [
+    "Preview supports up to 1,000 pages. Use a smaller document for preview.",
+    "預覽最多支援 1,000 頁，請使用較小的文件進行預覽。",
   ],
   ACCESS: [
     "The selected file or folder cannot be accessed.",

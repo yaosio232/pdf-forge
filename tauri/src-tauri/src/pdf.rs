@@ -1,7 +1,9 @@
 //! Object-graph PDF operations. Destinations use page object IDs, never guessed offsets.
 use crate::model::{ForgeError, ForgeResult, PdfInfo};
 use lopdf::{dictionary, Dictionary, Document, Object, ObjectId};
-use std::{collections::{BTreeMap, HashSet}, fs::OpenOptions, io::{BufWriter, Write}, path::{Path, PathBuf}};
+use std::{collections::{BTreeMap, HashSet}, fs::{File, OpenOptions}, io::{BufWriter, Read, Write}, path::{Path, PathBuf}};
+
+pub const PREVIEW_LIMIT: u64 = 256 * 1024 * 1024;
 
 fn error(e: impl ToString) -> ForgeError { ForgeError::new("pdf_invalid", e) }
 fn resolve<'a>(d: &'a Document, o: &'a Object) -> ForgeResult<&'a Object> {
@@ -12,7 +14,47 @@ fn resolve<'a>(d: &'a Document, o: &'a Object) -> ForgeResult<&'a Object> {
 fn load(path:&Path)->ForgeResult<Document>{Document::load(path).map_err(error)}
 fn encrypted(d:&Document)->bool{d.is_encrypted()||d.encryption_state.is_some()}
 fn plain(path:&Path)->ForgeResult<Document>{let d=load(path)?;if encrypted(&d){return Err(ForgeError::new("pdf_encrypted","Unlock this PDF with its known password first"));} Ok(d)}
-pub fn info(path:&Path)->ForgeResult<PdfInfo>{let d=load(path)?;Ok(PdfInfo{pages:d.get_pages().len() as u32,encrypted:encrypted(&d)})}
+fn read_preview_handle(file:&mut File, cap:u64)->ForgeResult<Vec<u8>> {
+    let size=file.metadata().map_err(|e|ForgeError::new("SOURCE_MISSING",e))?.len();
+    if size==0 || size>cap {return Err(ForgeError::new("FILE_SIZE","Preview limit is 256 MiB"));}
+    let mut bytes=Vec::new();
+    file.take(cap+1).read_to_end(&mut bytes).map_err(|e|ForgeError::new("SOURCE_MISSING",e))?;
+    if bytes.is_empty() || bytes.len() as u64>cap {return Err(ForgeError::new("FILE_SIZE","Preview limit is 256 MiB"));}
+    Ok(bytes)
+}
+pub fn preview_bytes(path:&Path)->ForgeResult<Vec<u8>> {
+    if !path.extension().unwrap_or_default().eq_ignore_ascii_case("pdf") {return Err(ForgeError::new("FILE_TYPE","Preview requires a PDF"));}
+    let mut file=File::open(path).map_err(|e|ForgeError::new("SOURCE_MISSING",e))?;
+    read_preview_handle(&mut file,PREVIEW_LIMIT)
+}
+pub fn info(path:&Path)->ForgeResult<PdfInfo>{
+    let d=Document::load_mem(&preview_bytes(path)?).map_err(error)?;
+    if encrypted(&d) {return Ok(PdfInfo{pages:0,encrypted:true});}
+    // lopdf's iterator may silently truncate malformed trees at the object count.
+    // Count and validate the actual Kids graph so it cannot undercount PDF.js.
+    fn visit(d:&Document,id:ObjectId,parent:Option<ObjectId>,depth:usize,seen:&mut HashSet<ObjectId>,pages:&mut u32)->ForgeResult<()> {
+        if depth>64 || !seen.insert(id) {return Err(error("Repeated or excessively deep PDF page tree"));}
+        let node=d.get_object(id).map_err(error)?.as_dict().map_err(error)?;
+        if let Some(parent)=parent {
+            if node.get(b"Parent").and_then(Object::as_reference).map_err(error)?!=parent {return Err(error("Invalid PDF page parent"));}
+        }
+        if node.has_type(b"Page") {
+            *pages+=1;
+            if *pages>1000 {return Err(ForgeError::new("FILE_PAGES","Preview limit is 1000 pages"));}
+        } else if node.has_type(b"Pages") {
+            let before=*pages;
+            for child in resolve(d,node.get(b"Kids").map_err(error)?)?.as_array().map_err(error)? {
+                visit(d,child.as_reference().map_err(error)?,Some(id),depth+1,seen,pages)?;
+            }
+            if node.get(b"Count").and_then(Object::as_i64).map_err(error)?!=(*pages-before) as i64 {return Err(error("PDF page count disagrees with page tree"));}
+        } else {return Err(error("Invalid PDF page tree node"));}
+        Ok(())
+    }
+    let root=d.catalog().map_err(error)?.get(b"Pages").and_then(Object::as_reference).map_err(error)?;
+    let mut pages=0;visit(&d,root,None,0,&mut HashSet::new(),&mut pages)?;
+    if pages==0 {return Err(error("PDF has no readable pages"));}
+    Ok(PdfInfo{pages,encrypted:false})
+}
 
 // Fail explicitly for structures whose document-level relationship cannot be joined safely.
 fn supported(d:&Document)->ForgeResult<()> {
@@ -215,8 +257,40 @@ pub fn unlock_to(source:&Path,password:&str,temp:&Path)->ForgeResult<u32>{
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn metadata_rejects_repeated_kids_instead_of_silently_truncating_the_page_tree() {
+        let directory=tempfile::tempdir().unwrap();let path=directory.path().join("repeated.pdf");
+        let mut document=Document::with_version("1.7");
+        document.objects.insert((1,0),dictionary!{"Type"=>"Catalog","Pages"=>(2,0)}.into());
+        document.objects.insert((2,0),dictionary!{"Type"=>"Pages","Count"=>1001,"Kids"=>vec![Object::Reference((3,0));1001]}.into());
+        document.objects.insert((3,0),dictionary!{"Type"=>"Page","Parent"=>(2,0),"MediaBox"=>vec![0.into(),0.into(),612.into(),792.into()]}.into());
+        document.trailer.set("Root",(1,0));document.max_id=3;document.save(&path).unwrap();
+        assert!(info(&path).is_err(),"Malformed Kids must not bypass the preview cap by undercounting");
+    }
     use super::*;
     use std::io::{self, Write};
+
+    #[test]
+    fn preview_reader_rejects_growth_past_cap_on_open_handle() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("growth.pdf");
+        std::fs::write(&source, b"%PDF-1.7").unwrap();
+        let mut file = std::fs::File::open(&source).unwrap();
+        std::fs::write(&source, vec![b'x'; 33]).unwrap();
+        assert_eq!(read_preview_handle(&mut file, 32).unwrap_err().code, "FILE_SIZE");
+    }
+
+    #[test]
+    fn metadata_rejects_oversized_and_empty_pdf_without_parsing() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("empty.pdf");
+        std::fs::write(&empty, []).unwrap();
+        assert_eq!(preview_bytes(&empty).unwrap_err().code, "FILE_SIZE");
+        let oversized = dir.path().join("huge.pdf");
+        let file = std::fs::File::create(&oversized).unwrap();
+        file.set_len(256 * 1024 * 1024 + 1).unwrap();
+        assert_eq!(preview_bytes(&oversized).unwrap_err().code, "FILE_SIZE");
+    }
 
     #[derive(Default)]
     struct CountingWriter { calls: usize, bytes: Vec<u8> }

@@ -1,10 +1,12 @@
 use crate::{model::*, pdf, transaction::{check_outputs, safe_name, PreparedOutput}};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs::{self, OpenOptions}, io::Write, path::{Path, PathBuf}, process::{Command, Stdio}, sync::{atomic::{AtomicBool,Ordering}, Arc, Mutex}, thread, time::{Duration,Instant}};
+use std::collections::VecDeque;
+use std::{collections::HashMap, fs::{self, OpenOptions}, io::{Read,Write}, path::{Path, PathBuf}, process::{Command, Stdio}, sync::{atomic::{AtomicBool,Ordering}, Arc, Mutex}, thread, time::{Duration,Instant}};
 
 #[derive(Serialize,Deserialize)]
 #[serde(tag="kind",rename_all="camelCase")]
 pub enum WorkerTask {
+    Info { source: PathBuf },
     Split { source: PathBuf, first: u32, last: u32, output: PathBuf },
     Merge { sources: Vec<PathBuf>, output: PathBuf },
     Unlock { source: PathBuf, password: String, output: PathBuf },
@@ -13,13 +15,38 @@ pub enum WorkerTask {
     Markdown { source: PathBuf, output: PathBuf, options: MarkdownOptions },
 }
 #[derive(Serialize,Deserialize)]
-pub struct WorkerResponse { pub pages: Option<u32>, pub error: Option<ForgeError> }
+pub struct WorkerResponse { pub pages: Option<u32>, pub info: Option<PdfInfo>, pub error: Option<ForgeError> }
 
 struct Job { event: Mutex<JobEvent>, cancel: AtomicBool, commit_gate: Mutex<()> }
 pub struct JobManager {
     jobs: Mutex<HashMap<String,Arc<Job>>>,
+    metadata: Mutex<Option<(String,Arc<AtomicBool>)>>,
+    cancelled_metadata: Mutex<VecDeque<String>>,
+    closing: AtomicBool,
+    metadata_gate: Mutex<()>,
     pub log_directory: PathBuf,
     worker: PathBuf,
+}
+struct MetadataCleanup<'a> { manager: &'a JobManager, id: String, cancel: Arc<AtomicBool> }
+struct WorkerChild(std::process::Child);
+impl std::ops::Deref for WorkerChild {type Target=std::process::Child;fn deref(&self)->&Self::Target{&self.0}}
+impl std::ops::DerefMut for WorkerChild {fn deref_mut(&mut self)->&mut Self::Target{&mut self.0}}
+impl Drop for WorkerChild {
+    fn drop(&mut self) {
+        let _=self.0.kill();
+        for _ in 0..100 {
+            match self.0.try_wait() {Ok(None)=>thread::sleep(Duration::from_millis(10)),_=>break}
+        }
+    }
+}
+struct WordCleanup(PathBuf);
+impl Drop for WordCleanup {fn drop(&mut self){cleanup_word(&self.0);}}
+impl Drop for MetadataCleanup<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut active)=self.manager.metadata.lock() {
+            if active.as_ref().is_some_and(|(id,cancel)| id==&self.id && Arc::ptr_eq(cancel,&self.cancel)) { *active=None; }
+        }
+    }
 }
 type Emit = Arc<dyn Fn(JobEvent) + Send + Sync>;
 fn terminal(status: &str)->bool { matches!(status,"completed"|"partial"|"cancelled"|"failed") }
@@ -29,7 +56,7 @@ fn total(request:&JobRequest)->usize {
 impl JobManager {
     pub fn new(log_directory:PathBuf,worker:PathBuf)->ForgeResult<Self> {
         fs::create_dir_all(&log_directory).map_err(|e|ForgeError::new("LOG_WRITE",e))?;
-        Ok(Self { jobs:Mutex::new(HashMap::new()),log_directory,worker })
+        Ok(Self { jobs:Mutex::new(HashMap::new()),metadata:Mutex::new(None),cancelled_metadata:Mutex::new(VecDeque::new()),closing:AtomicBool::new(false),metadata_gate:Mutex::new(()),log_directory,worker })
     }
     pub fn get(&self,id:&str)->ForgeResult<JobEvent> {
         let job = self.jobs.lock().map_err(|_|ForgeError::new("INTERNAL","Job registry unavailable"))?.get(id).cloned().ok_or_else(||ForgeError::new("JOB_MISSING","Unknown job"))?;
@@ -43,15 +70,56 @@ impl JobManager {
         Ok(())
     }
     pub fn cancel_all(&self) {
+        if let Ok(active)=self.metadata.lock() {if let Some((_,cancel))=active.as_ref(){cancel.store(true,Ordering::SeqCst);}}
         let jobs:Vec<_>=self.jobs.lock().map(|jobs|jobs.values().cloned().collect()).unwrap_or_default();
         for job in jobs {if let Ok(_gate)=job.commit_gate.lock(){job.cancel.store(true,Ordering::SeqCst);}}
     }
+    pub fn stop_accepting(&self) {self.closing.store(true,Ordering::SeqCst);}
     pub fn active(&self)->bool {
+        if self.metadata.lock().map(|active|active.is_some()).unwrap_or(true) || self.metadata_gate.try_lock().is_err() {return true;}
         self.jobs.lock().map(|jobs|jobs.values().any(|j|j.event.lock().map(|e|!terminal(&e.status)).unwrap_or(true))).unwrap_or(true)
+    }
+    pub fn register_pdf_info(&self,id:&str)->ForgeResult<()> {
+        if id.is_empty() || id.len()>128 {return Err(ForgeError::new("REQUEST_ID","Invalid metadata request ID"));}
+        let mut active=self.metadata.lock().map_err(|_|ForgeError::new("INTERNAL","Metadata state unavailable"))?;
+        if self.closing.load(Ordering::SeqCst) {return Err(ForgeError::new("CANCELLED","Application is closing"));}
+        let mut cancelled=self.cancelled_metadata.lock().map_err(|_|ForgeError::new("INTERNAL","Metadata cancellation state unavailable"))?;
+        if let Some(position)=cancelled.iter().position(|cancelled|cancelled==id) {
+            cancelled.remove(position);return Err(ForgeError::new("CANCELLED","Metadata request cancelled before registration"));
+        }
+        if active.as_ref().is_some_and(|(old,_)|old==id) {return Err(ForgeError::new("REQUEST_ID","Duplicate metadata request ID"));}
+        if let Some((_,cancel))=active.as_ref(){cancel.store(true,Ordering::SeqCst);}
+        *active=Some((id.into(),Arc::new(AtomicBool::new(false))));
+        Ok(())
+    }
+    pub fn cancel_pdf_info(&self,id:&str)->ForgeResult<()> {
+        if id.is_empty() || id.len()>128 {return Err(ForgeError::new("REQUEST_ID","Invalid metadata request ID"));}
+        let active=self.metadata.lock().map_err(|_|ForgeError::new("INTERNAL","Metadata state unavailable"))?;
+        if let Some((active_id,cancel))=active.as_ref() {if active_id==id {cancel.store(true,Ordering::SeqCst);return Ok(());}}
+        let mut cancelled=self.cancelled_metadata.lock().map_err(|_|ForgeError::new("INTERNAL","Metadata cancellation state unavailable"))?;
+        if !cancelled.iter().any(|cancelled|cancelled==id) {
+            if cancelled.len()==64 {cancelled.pop_front();}
+            cancelled.push_back(id.into());
+        }
+        Ok(())
+    }
+    pub fn pdf_info(&self,id:&str,source:PathBuf)->ForgeResult<PdfInfo> {
+        let cancel={
+            let active=self.metadata.lock().map_err(|_|ForgeError::new("INTERNAL","Metadata state unavailable"))?;
+            active.as_ref().filter(|(active_id,_)|active_id==id).map(|(_,cancel)|cancel.clone())
+                .ok_or_else(||ForgeError::new("CANCELLED","Metadata request superseded"))?
+        };
+        let _cleanup=MetadataCleanup{manager:self,id:id.into(),cancel:cancel.clone()};
+        let _gate=self.metadata_gate.lock().map_err(|_|ForgeError::new("INTERNAL","Metadata gate unavailable"))?;
+        if cancel.load(Ordering::SeqCst){return Err(ForgeError::new("CANCELLED","Metadata request cancelled"));}
+        let response=self.execute_worker(&cancel,WorkerTask::Info{source},Duration::from_secs(15),None)?;
+        if cancel.load(Ordering::SeqCst){return Err(ForgeError::new("CANCELLED","Metadata request cancelled"));}
+        response.info.ok_or_else(||ForgeError::new("WORKER_EXIT","Worker returned no metadata"))
     }
     pub fn start(self:&Arc<Self>,request:JobRequest,emit:Emit)->ForgeResult<String> {
         validate_request(&request)?;
         let mut jobs=self.jobs.lock().map_err(|_|ForgeError::new("INTERNAL","Job registry unavailable"))?;
+        if self.closing.load(Ordering::SeqCst) {return Err(ForgeError::new("CANCELLED","Application is closing"));}
         if jobs.values().any(|j|j.event.lock().map(|e|!terminal(&e.status)).unwrap_or(true)) { return Err(ForgeError::new("JOB_BUSY","Another job is running")); }
         // Keep recent terminal results for retrieval without retaining an unbounded history.
         if jobs.len()>50 { jobs.retain(|_,j|j.event.lock().map(|e|!terminal(&e.status)).unwrap_or(true)); }
@@ -93,30 +161,45 @@ impl JobManager {
     }
     fn execute(&self,job:&Job,task:WorkerTask,timeout:Duration)->ForgeResult<Option<u32>> {
         Self::check_cancel(job)?;
+        let id=job.event.lock().map_err(|_|ForgeError::new("INTERNAL","Job state unavailable"))?.job_id.clone();
+        Ok(self.execute_worker(&job.cancel,task,timeout,Some(&id))?.pages)
+    }
+    fn execute_worker(&self,cancel:&AtomicBool,task:WorkerTask,timeout:Duration,log_id:Option<&str>)->ForgeResult<WorkerResponse> {
+        if cancel.load(Ordering::SeqCst) {return Err(ForgeError::new("CANCELLED","Worker cancelled"));}
+        let metadata=matches!(task,WorkerTask::Info{..});
         let root=self.log_directory.parent().unwrap_or(&self.log_directory).join("jobs");
         fs::create_dir_all(&root).map_err(|e|ForgeError::new("WORKER_START",e))?;
         let dir=tempfile::Builder::new().prefix("job-").tempdir_in(&root).map_err(|e|ForgeError::new("WORKER_START",e))?;
         let request=dir.path().join("request.json"); let response=dir.path().join("result.json"); let identity=dir.path().join("word.json");
+        let _word_cleanup=WordCleanup(identity.clone());
         fs::write(&request,serde_json::to_vec(&task).map_err(|e|ForgeError::new("INTERNAL",e))?).map_err(|e|ForgeError::new("WORKER_START",e))?;
         let mut command=Command::new(&self.worker);
-        command.arg("--worker").arg(dir.path()).env("PDF_FORGE_WORD_IDENTITY",&identity).env("PDF_FORGE_CANCEL_FILE",dir.path().join("cancel")).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        command.arg("--worker").arg(dir.path()).env("PDF_FORGE_WORD_IDENTITY",&identity).env("PDF_FORGE_CANCEL_FILE",dir.path().join("cancel")).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null());
         #[cfg(windows)] { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
-        let mut child=command.spawn().map_err(|e|ForgeError::new("WORKER_START",e))?;
-        #[cfg(windows)] let _tree=match ProcessTree::attach(&child) {Ok(tree)=>tree,Err(error)=>{let _=child.kill();let _=child.wait();return Err(error);}};
-        self.log(&job.event.lock().unwrap().job_id,"worker-start",None);
+        let mut child=WorkerChild(command.spawn().map_err(|e|ForgeError::new("WORKER_START",e))?);
+        #[cfg(windows)] let _tree=match ProcessTree::attach(&child,metadata) {Ok(tree)=>tree,Err(error)=>{let _=child.kill();let _=child.wait();return Err(error);}};
+        if cancel.load(Ordering::SeqCst) {let _=child.kill();let _=child.wait();return Err(ForgeError::new("CANCELLED","Worker cancelled"));}
+        if child.stdin.take().ok_or_else(||ForgeError::new("WORKER_START","Worker start gate unavailable"))?.write_all(&[1]).is_err() {
+            let _=child.kill();let _=child.wait();return Err(ForgeError::new("WORKER_START","Worker start gate failed"));
+        }
+        if let Some(id)=log_id {self.log(id,"worker-start",None);}
         let started=Instant::now(); let mut stop:Option<(Instant,&str)>=None;
         loop {
             if let Some(status)=child.try_wait().map_err(|e|ForgeError::new("WORKER_EXIT",e))? {
                 cleanup_word(&identity);
                 if let Some((_,code))=stop { return Err(ForgeError::new(code,"Worker stopped")); }
-                if !status.success() && !response.exists() { return Err(ForgeError::new("WORKER_EXIT",format!("Worker exited {status}"))); }
-                let result:WorkerResponse=serde_json::from_slice(&fs::read(&response).map_err(|e|ForgeError::new("WORKER_EXIT",e))?).map_err(|e|ForgeError::new("WORKER_EXIT",e))?;
-                return if let Some(error)=result.error { Err(error) } else { Ok(result.pages) };
+                if !status.success() { return Err(ForgeError::new("WORKER_EXIT",format!("Worker exited before completion or hit a resource limit ({status})"))); }
+                let file=fs::File::open(&response).map_err(|_|ForgeError::new("WORKER_EXIT","Worker response missing"))?;
+                let mut bytes=Vec::new();file.take(64*1024+1).read_to_end(&mut bytes).map_err(|_|ForgeError::new("WORKER_EXIT","Worker response unreadable"))?;
+                if bytes.len()>64*1024 {return Err(ForgeError::new("WORKER_EXIT","Worker response too large"));}
+                let result:WorkerResponse=serde_json::from_slice(&bytes).map_err(|_|ForgeError::new("WORKER_EXIT","Worker response invalid"))?;
+                return if let Some(error)=result.error { Err(error) } else { Ok(result) };
             }
-            if stop.is_none() && (job.cancel.load(Ordering::SeqCst) || started.elapsed()>=timeout) {
-                let code=if job.cancel.load(Ordering::SeqCst) {"CANCELLED"} else {"TIMEOUT"};
+            if stop.is_none() && (cancel.load(Ordering::SeqCst) || started.elapsed()>=timeout) {
+                let code=if cancel.load(Ordering::SeqCst) {"CANCELLED"} else {"TIMEOUT"};
                 let _=fs::write(dir.path().join("cancel"),b"stop");
                 stop=Some((Instant::now(),code));
+                if metadata {let _=child.kill();}
             }
             if let Some((since,code))=stop {
                 if since.elapsed()>=Duration::from_secs(5) { let _=child.kill(); let _=child.wait(); cleanup_word(&identity); return Err(ForgeError::new(code,"Worker did not stop within grace period")); }
@@ -128,7 +211,7 @@ impl JobManager {
         let transaction=PreparedOutput::new(output,overwrite)?;
         let task=with_output(task,transaction.path().to_path_buf());
         let result=self.execute(job,task,Duration::from_secs(300))?;
-        pdf::validate(transaction.path())?; Self::commit(job,transaction)?;
+        Self::commit(job,transaction)?;
         Ok(ItemResult {source:source.into(),output:Some(output.to_string_lossy().into_owned()),pages:result,error:None})
     }
     fn run(&self,job:&Job,request:JobRequest,emit:&Emit)->ForgeResult<()> {
@@ -152,7 +235,7 @@ impl JobManager {
                         self.update(job,emit,"word",None);
                         let pdf=temp.path().join(format!("{i}.pdf"));
                         match self.execute(job,WorkerTask::WordToPdf{source:source.into(),output:pdf.clone()},Duration::from_secs(300)) {
-                            Ok(_)=> {pdf::validate(&pdf)?; prepared.push(pdf); self.update(job,emit,"word",Some(ItemResult{source:source.clone(),output:None,pages:None,error:None}));},
+                            Ok(_)=> {prepared.push(pdf); self.update(job,emit,"word",Some(ItemResult{source:source.clone(),output:None,pages:None,error:None}));},
                             Err(e) if e.code=="CANCELLED"=>return Err(e),
                             Err(e)=>self.update(job,emit,"word",Some(ItemResult{source:source.clone(),output:None,pages:None,error:Some(e)})),
                         }
@@ -189,7 +272,7 @@ impl JobManager {
                     self.update(job,emit,"markdown",None);
                     let target=if merged {temp.path().join(format!("{i}.pdf"))} else {Path::new(&output).join(format!("{}.pdf",Path::new(source).file_stem().unwrap().to_string_lossy()))};
                     let transaction=PreparedOutput::new(&target,if merged {false} else {overwrite})?;
-                    let outcome=self.execute(job,WorkerTask::Markdown{source:source.into(),output:transaction.path().to_path_buf(),options:options.clone()},Duration::from_secs(120)).and_then(|_|pdf::validate(transaction.path())).and_then(|pages| { Self::commit(job,transaction)?;Ok(ItemResult{source:source.clone(),output:if merged {None} else {Some(target.to_string_lossy().into_owned())},pages:Some(pages),error:None}) });
+                    let outcome=self.execute(job,WorkerTask::Markdown{source:source.into(),output:transaction.path().to_path_buf(),options:options.clone()},Duration::from_secs(120)).and_then(|pages| { Self::commit(job,transaction)?;Ok(ItemResult{source:source.clone(),output:if merged {None} else {Some(target.to_string_lossy().into_owned())},pages,error:None}) });
                     let item=item_or_failure(source,outcome)?;
                     if item.error.is_some() {any_failed=true;} else {prepared.push(target);}
                     self.update(job,emit,"markdown",Some(item));
@@ -240,20 +323,28 @@ pub fn validate_request(request:&JobRequest)->ForgeResult<()> {
     check_outputs(&sources,&outputs,overwrite)
 }
 fn with_output(task:WorkerTask,output:PathBuf)->WorkerTask {
-    match task {WorkerTask::Split{source,first,last,..}=>WorkerTask::Split{source,first,last,output},WorkerTask::Merge{sources,..}=>WorkerTask::Merge{sources,output},WorkerTask::Unlock{source,password,..}=>WorkerTask::Unlock{source,password,output},WorkerTask::WordToPdf{source,..}=>WorkerTask::WordToPdf{source,output},WorkerTask::PdfToWord{source,..}=>WorkerTask::PdfToWord{source,output},WorkerTask::Markdown{source,options,..}=>WorkerTask::Markdown{source,output,options}}
+    match task {WorkerTask::Info{source}=>WorkerTask::Info{source},WorkerTask::Split{source,first,last,..}=>WorkerTask::Split{source,first,last,output},WorkerTask::Merge{sources,..}=>WorkerTask::Merge{sources,output},WorkerTask::Unlock{source,password,..}=>WorkerTask::Unlock{source,password,output},WorkerTask::WordToPdf{source,..}=>WorkerTask::WordToPdf{source,output},WorkerTask::PdfToWord{source,..}=>WorkerTask::PdfToWord{source,output},WorkerTask::Markdown{source,options,..}=>WorkerTask::Markdown{source,output,options}}
 }
 
+fn wait_for_start_gate(reader:&mut impl Read)->ForgeResult<()> {
+    let mut gate=[0];
+    reader.read_exact(&mut gate).map_err(|_|ForgeError::new("WORKER_START","Worker start gate closed"))?;
+    if gate!=[1] {return Err(ForgeError::new("WORKER_START","Worker start gate rejected"));}
+    Ok(())
+}
 pub fn worker_main(directory:&Path)->ForgeResult<()> {
+    wait_for_start_gate(&mut std::io::stdin())?;
     let task:WorkerTask=serde_json::from_slice(&fs::read(directory.join("request.json")).map_err(|e|ForgeError::new("WORKER_REQUEST",e))?).map_err(|e|ForgeError::new("WORKER_REQUEST",e))?;
-    let result:ForgeResult<Option<u32>>=match task {
-        WorkerTask::Split{source,first,last,output}=>pdf::split_to(&source,first,last,&output).map(Some),
-        WorkerTask::Merge{sources,output}=>pdf::merge_to(&sources,&output).map(Some),
-        WorkerTask::Unlock{source,password,output}=>pdf::unlock_to(&source,&password,&output).map(Some),
-        WorkerTask::WordToPdf{source,output}=>crate::conversions::word_to_pdf(&source,&output).and_then(|_|normalize_generated(&output)).map(Some),
-        WorkerTask::PdfToWord{source,output}=>pdf::validate(&source).and_then(|_|crate::conversions::pdf_to_word(&source,&output)).map(|_|None),
-        WorkerTask::Markdown{source,output,options}=>crate::conversions::markdown_to_pdf(&source,&output,&options).and_then(|_|normalize_generated(&output)).map(Some),
+    let result:ForgeResult<(Option<u32>,Option<PdfInfo>)>=match task {
+        WorkerTask::Info{source}=>pdf::info(&source).map(|info|(None,Some(info))),
+        WorkerTask::Split{source,first,last,output}=>pdf::split_to(&source,first,last,&output).and_then(|_|pdf::validate(&output)).map(|pages|(Some(pages),None)),
+        WorkerTask::Merge{sources,output}=>pdf::merge_to(&sources,&output).and_then(|_|pdf::validate(&output)).map(|pages|(Some(pages),None)),
+        WorkerTask::Unlock{source,password,output}=>pdf::unlock_to(&source,&password,&output).and_then(|_|pdf::validate(&output)).map(|pages|(Some(pages),None)),
+        WorkerTask::WordToPdf{source,output}=>crate::conversions::word_to_pdf(&source,&output).and_then(|_|normalize_generated(&output)).and_then(|_|pdf::validate(&output)).map(|pages|(Some(pages),None)),
+        WorkerTask::PdfToWord{source,output}=>pdf::validate(&source).and_then(|_|crate::conversions::pdf_to_word(&source,&output)).map(|_|(None,None)),
+        WorkerTask::Markdown{source,output,options}=>crate::conversions::markdown_to_pdf(&source,&output,&options).and_then(|_|normalize_generated(&output)).and_then(|_|pdf::validate(&output)).map(|pages|(Some(pages),None)),
     };
-    let response=match result {Ok(pages)=>WorkerResponse{pages,error:None},Err(error)=>WorkerResponse{pages:None,error:Some(error)}};
+    let response=match result {Ok((pages,info))=>WorkerResponse{pages,info,error:None},Err(error)=>WorkerResponse{pages:None,info:None,error:Some(error)}};
     fs::write(directory.join("result.json"),serde_json::to_vec(&response).map_err(|e|ForgeError::new("INTERNAL",e))?).map_err(|e|ForgeError::new("WORKER_EXIT",e))
 }
 
@@ -269,12 +360,17 @@ fn normalize_generated(path:&Path)->ForgeResult<u32> {
 struct ProcessTree(windows::Win32::Foundation::HANDLE);
 #[cfg(windows)]
 impl ProcessTree {
-    fn attach(child:&std::process::Child)->ForgeResult<Self> {
+    fn attach(child:&std::process::Child,metadata:bool)->ForgeResult<Self> {
         use std::os::windows::io::AsRawHandle;
         use windows::Win32::{Foundation::{CloseHandle,HANDLE}, System::JobObjects::*};
         unsafe {
             let handle=CreateJobObjectW(None,None).map_err(|e|ForgeError::new("WORKER_START",e))?;
             let mut info=JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default(); info.BasicLimitInformation.LimitFlags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            if metadata {
+                info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY | JOB_OBJECT_LIMIT_PROCESS_TIME;
+                info.BasicLimitInformation.PerProcessUserTimeLimit=10*10_000_000;
+                info.ProcessMemoryLimit=1024*1024*1024;
+            }
             if let Err(error)=SetInformationJobObject(handle,JobObjectExtendedLimitInformation,&info as *const _ as *const _,std::mem::size_of_val(&info) as u32).and_then(|_|AssignProcessToJobObject(handle,HANDLE(child.as_raw_handle()))) {let _=CloseHandle(handle);return Err(ForgeError::new("WORKER_START",error));}
             Ok(Self(handle))
         }
@@ -297,6 +393,87 @@ fn cleanup_word(marker:&Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn metadata_cancellation_before_registration_prevents_launch_and_is_bounded() {
+        let directory=tempfile::tempdir().unwrap();
+        let manager=JobManager::new(directory.path().join("logs"),PathBuf::from("must-not-start.exe")).unwrap();
+        manager.cancel_pdf_info("not-registered").unwrap();
+        manager.cancel_pdf_info("not-registered").unwrap();
+        assert_eq!(manager.register_pdf_info("not-registered").unwrap_err().code,"CANCELLED");
+        assert!(!manager.active());
+        for index in 0..70 {manager.cancel_pdf_info(&format!("cancel-{index}")).unwrap();}
+        assert!(manager.register_pdf_info("cancel-0").is_ok(),"Old cancellation must be evicted from the bounded window");
+        assert_eq!(manager.register_pdf_info("cancel-69").unwrap_err().code,"CANCELLED");
+    }
+    #[test]
+    fn shutdown_rejects_late_metadata_and_conversion_requests() {
+        let directory=tempfile::tempdir().unwrap();
+        let manager=Arc::new(JobManager::new(directory.path().join("logs"),PathBuf::from("must-not-start.exe")).unwrap());
+        let source=directory.path().join("source.pdf");fs::write(&source,b"unparsed test source").unwrap();
+        manager.stop_accepting();manager.cancel_all();
+        assert_eq!(manager.register_pdf_info("late").unwrap_err().code,"CANCELLED");
+        let request=JobRequest::Merge{sources:vec![source.to_string_lossy().into_owned()],output:directory.path().join("output.pdf").to_string_lossy().into_owned(),overwrite:false};
+        assert_eq!(manager.start(request,Arc::new(|_|{})).unwrap_err().code,"CANCELLED");
+        assert!(!manager.active());
+    }
+    #[cfg(windows)]
+    #[test]
+    fn child_guard_terminates_owned_process_when_scope_exits_early() {
+        use std::os::windows::process::CommandExt;
+        use windows::Win32::{Foundation::CloseHandle,System::Threading::{OpenProcess,WaitForSingleObject,PROCESS_SYNCHRONIZE}};
+        let handle={
+            let child=WorkerChild(Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-Command","Start-Sleep -Seconds 30"]).creation_flags(0x08000000).spawn().unwrap());
+            unsafe{OpenProcess(PROCESS_SYNCHRONIZE,false,child.id()).unwrap()}
+        };
+        unsafe{assert_eq!(WaitForSingleObject(handle,2000).0,0);let _=CloseHandle(handle);}
+    }
+    #[test]
+    fn worker_start_gate_rejects_closed_or_wrong_input() {
+        assert_eq!(wait_for_start_gate(&mut std::io::empty()).unwrap_err().code,"WORKER_START");
+        assert_eq!(wait_for_start_gate(&mut &[0][..]).unwrap_err().code,"WORKER_START");
+        wait_for_start_gate(&mut &[1][..]).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
+    fn metadata_job_applies_process_memory_cpu_and_tree_limits() {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::{Foundation::HANDLE,System::JobObjects::*};
+        let mut child=Command::new("powershell.exe").args(["-NoProfile","-Command","Start-Sleep -Seconds 10"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        let tree=ProcessTree::attach(&child,true).unwrap();
+        let mut info=JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        unsafe {
+            QueryInformationJobObject(Some(tree.0),JobObjectExtendedLimitInformation,&mut info as *mut _ as *mut _,std::mem::size_of_val(&info) as u32,None).unwrap();
+            let mut assigned=windows::core::BOOL::from(false);
+            IsProcessInJob(HANDLE(child.as_raw_handle()),Some(tree.0),&mut assigned).unwrap();
+            assert!(assigned.as_bool());
+        }
+        assert!(info.BasicLimitInformation.LimitFlags.contains(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE));
+        assert!(info.BasicLimitInformation.LimitFlags.contains(JOB_OBJECT_LIMIT_PROCESS_MEMORY));
+        assert!(info.BasicLimitInformation.LimitFlags.contains(JOB_OBJECT_LIMIT_PROCESS_TIME));
+        assert_eq!(info.ProcessMemoryLimit,1024*1024*1024);
+        assert_eq!(info.BasicLimitInformation.PerProcessUserTimeLimit,10*10_000_000);
+        let _=child.kill();let _=child.wait();
+    }
+    #[test]
+    fn active_includes_metadata_parse_after_request_slot_is_cleared() {
+        let directory=tempfile::tempdir().unwrap();
+        let manager=JobManager::new(directory.path().join("logs"),PathBuf::from("unused-worker")).unwrap();
+        let gate=manager.metadata_gate.lock().unwrap();
+        assert!(manager.active(),"A metadata parse still owns the execution gate");
+        drop(gate);
+    }
+    #[test]
+    fn metadata_registration_supersedes_prior_request_and_cancellation_is_idempotent() {
+        let directory=tempfile::tempdir().unwrap();
+        let manager=JobManager::new(directory.path().join("logs"),PathBuf::from("unused-worker")).unwrap();
+        manager.register_pdf_info("one").unwrap();
+        let old=manager.metadata.lock().unwrap().as_ref().unwrap().1.clone();
+        manager.register_pdf_info("two").unwrap();
+        assert!(old.load(Ordering::SeqCst));
+        manager.cancel_pdf_info("two").unwrap();manager.cancel_pdf_info("two").unwrap();
+        assert!(manager.metadata.lock().unwrap().as_ref().unwrap().1.load(Ordering::SeqCst));
+        assert!(manager.active());
+    }
     #[test]
     fn logs_keep_error_codes_without_document_or_password_diagnostics() {
         let directory=tempfile::tempdir().unwrap();
