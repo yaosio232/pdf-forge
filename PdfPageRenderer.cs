@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace Pdf_Merger;
 
 /// <summary>
@@ -26,50 +24,26 @@ public static class PdfPageRenderer
         }
 
         var prefix = Path.Combine(outputDirectory, "page");
-        var startInfo = new ProcessStartInfo
+        var arguments = new[]
         {
-            FileName = renderer,
-            WorkingDirectory = Path.GetDirectoryName(renderer) ?? AppContext.BaseDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true
+            "-png", "-scale-to", targetSize.ToString(), "-f", firstPage.ToString(),
+            "-l", (firstPage + pageCount - 1).ToString(), sourcePath, prefix
         };
-        startInfo.ArgumentList.Add("-png");
-        startInfo.ArgumentList.Add("-scale-to");
-        startInfo.ArgumentList.Add(targetSize.ToString());
-        startInfo.ArgumentList.Add("-f");
-        startInfo.ArgumentList.Add(firstPage.ToString());
-        startInfo.ArgumentList.Add("-l");
-        startInfo.ArgumentList.Add((firstPage + pageCount - 1).ToString());
-        startInfo.ArgumentList.Add(sourcePath);
-        startInfo.ArgumentList.Add(prefix);
-
-        using var process = Process.Start(startInfo);
-        if (process is null)
+        int exitCode;
+        try
         {
+            exitCode = RunConfined(renderer, arguments,
+                Path.GetDirectoryName(renderer) ?? AppContext.BaseDirectory, cancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception exception) when (exception is IOException or TimeoutException or System.ComponentModel.Win32Exception)
+        {
+            Logger.LogError("Preview renderer was stopped or could not be confined; preview is unavailable.", exception);
             return Array.Empty<string>();
         }
-
-        // Drain both pipes while rendering so a full pipe cannot prevent shutdown.
-        var errorRead = process.StandardError.ReadToEndAsync();
-        var outputRead = process.StandardOutput.ReadToEndAsync();
-        while (!process.WaitForExit(200))
+        if (exitCode != 0)
         {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                TryStop(process);
-                // Cleanup must never race a renderer whose termination failed or timed out.
-                process.WaitForExit();
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-        }
-
-        var errorOutput = errorRead.GetAwaiter().GetResult();
-        var standardOutput = outputRead.GetAwaiter().GetResult();
-        if (process.ExitCode != 0)
-        {
-            Logger.LogInfo($"Preview renderer failed (exit {process.ExitCode}) using '{renderer}': {errorOutput.Trim()} {standardOutput.Trim()}".Trim());
+            Logger.LogInfo($"Preview renderer failed (exit {exitCode}) using '{renderer}'. Standard output and error are not retained.");
             return Array.Empty<string>();
         }
 
@@ -93,21 +67,12 @@ public static class PdfPageRenderer
         return outputFiles;
     }
 
-    private static void TryStop(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-            {
-                process.Kill(entireProcessTree: true);
-                process.WaitForExit(5_000);
-            }
-        }
-        catch
-        {
-            // Preview rendering is optional; the split controls still work.
-        }
-    }
+    internal static int RunConfined(string executable, IReadOnlyList<string> arguments,
+        string workingDirectory, CancellationToken cancellationToken,
+        TimeSpan? wallTimeLimit = null, TimeSpan? cpuTimeLimit = null, long? memoryLimitBytes = null) =>
+        RendererProcess.Run(executable, arguments, workingDirectory, cancellationToken,
+            wallTimeLimit ?? TimeSpan.FromSeconds(120), cpuTimeLimit ?? TimeSpan.FromSeconds(90),
+            memoryLimitBytes ?? 1024L * 1024 * 1024);
 
     private static int ParsePageNumber(string path)
     {

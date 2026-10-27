@@ -1,4 +1,5 @@
 [CmdletBinding()]
+# Supplemental ZIP builder only. A ZIP/sidecar EXE does not satisfy the single-file delivery rule.
 param(
     [Parameter(Mandatory)]
     [string]$PopplerRoot,
@@ -16,17 +17,20 @@ param(
     [ValidatePattern('^\d{4}-\d{2}-\d{2}$')]
     [string]$BuildDate,
 
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\dist')
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\dist'),
+
+    [switch]$StageOnly
 )
 
 $ErrorActionPreference = 'Stop'
-$expectedPackageSha256 = '3FDBB4CAF50ECAE4FA447CB7A7D6D5B521A39AE8D4DE4F6565E0CE9CD6D7F903'
-$expectedSourceSha256 = '304832F48F8A47FDCA90C6B6D1F684E68F37C10C9A0726F345F4CA9DF4CA01E2'
-$expectedPackageFileName = 'poppler-26.07.0-h6618ce5_3.conda'
-$expectedSourceFileName = 'poppler-26.07.0.tar.xz'
-$expectedFeedstockRevision = '4f5f76cc7b8aa5ac5090988bd78ab7bde271c10a'
-$expectedRecipeSha256 = 'B666027F1CF87D1EDA24B303F3EA3983897F54F31796A605064DCA1D1959576D'
-$expectedSdk = '8.0.409'
+$expectedPackageSha256 = 'BB319F6881D91E175F90A9D33A25313E4CFDDC15DD234521519985BAF92FEFCD'
+$expectedSourceSha256 = '8059EADB6805340768F138C465B57F8164C92B4A0773C37EF031EA6C0D987B2E'
+$expectedPackageFileName = 'poppler-26.09.0-h924501e_0.conda'
+$expectedSourceFileName = 'poppler-26.09.0.tar.xz'
+$expectedFeedstockRevision = '13d784d77510e73d6066a75a79cd8e6040a6a261'
+$expectedRecipeSha256 = '2ED4E6B158EB3C9F0FA3F71C5D7162AB94C2D3485A34888F020277C7ABB4392D'
+$expectedSdk = '10.0.403'
+$expectedRuntime = '10.0.14'
 $expectedPatches = @(
     'disable-libtiff-win32-io.patch',
     'exportsymbols.patch',
@@ -67,9 +71,9 @@ $requiredInputs = @(
     (Join-Path $packageInfoPath 'recipe'),
     $sourceArchivePath,
     $packageArchivePath,
-    (Join-Path $repositoryRoot 'licenses\Poppler-26.07.0-COPYING.txt'),
-    (Join-Path $repositoryRoot 'licenses\Poppler-26.07.0-SOURCE.md'),
-    (Join-Path $repositoryRoot 'licenses\Poppler-26.07.0-DEPENDENCIES.md')
+    (Join-Path $repositoryRoot 'licenses\Poppler-26.09.0-COPYING.txt'),
+    (Join-Path $repositoryRoot 'licenses\Poppler-26.09.0-SOURCE.md'),
+    (Join-Path $repositoryRoot 'licenses\Poppler-26.09.0-DEPENDENCIES.md')
 )
 
 foreach ($path in $requiredInputs) {
@@ -97,7 +101,7 @@ $metadataIdentity = @(
     $packageMetadata.subdir,
     $packageMetadata.license
 )
-$expectedIdentity = @('poppler', '26.07.0', 'h6618ce5_3', 'win-64', 'GPL-2.0-or-later')
+$expectedIdentity = @('poppler', '26.09.0', 'h924501e_0', 'win-64', 'GPL-2.0-or-later')
 if (Compare-Object $expectedIdentity $metadataIdentity -SyncWindow 0) {
     throw "Unexpected Poppler package metadata: $($metadataIdentity -join ', ')."
 }
@@ -136,10 +140,10 @@ if ($recipeHash -ne $expectedRecipeSha256) {
 
 $runtimeManifest = Get-Content -LiteralPath (Join-Path $popplerRootPath 'manifest.json') -Raw | ConvertFrom-Json
 if ($runtimeManifest.name -ne 'poppler' -or
-    $runtimeManifest.version -ne '26.07.0' -or
+    $runtimeManifest.version -ne '26.09.0' -or
     $runtimeManifest.targetPlatform -ne 'win32' -or
     $runtimeManifest.targetArch -ne 'x64' -or
-    $runtimeManifest.packageSpec -ne 'poppler=26.07.0=h6618ce5_3') {
+    $runtimeManifest.packageSpec -ne 'poppler=26.09.0=h924501e_0') {
     throw 'The Poppler runtime manifest does not match the pinned Windows x64 package.'
 }
 foreach ($dataDirectory in 'cMap', 'cidToUnicode', 'nameToUnicode', 'unicodeMap') {
@@ -149,7 +153,7 @@ foreach ($dataDirectory in 'cMap', 'cidToUnicode', 'nameToUnicode', 'unicodeMap'
 }
 
 $trackedLicense = [System.IO.File]::ReadAllText(
-    (Join-Path $repositoryRoot 'licenses\Poppler-26.07.0-COPYING.txt')).Replace("`r`n", "`n").TrimEnd()
+    (Join-Path $repositoryRoot 'licenses\Poppler-26.09.0-COPYING.txt')).Replace("`r`n", "`n").TrimEnd()
 $packageLicense = [System.IO.File]::ReadAllText(
     (Join-Path $packageInfoPath 'licenses\COPYING')).Replace("`r`n", "`n").TrimEnd()
 if ($trackedLicense -cne $packageLicense) {
@@ -181,6 +185,21 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet publish failed with exit code $LASTEXITCODE."
     }
+    # Single-file publication bundles these assemblies. Verify the exact restored runtime packs.
+    $assets = Get-Content -LiteralPath (Join-Path $repositoryRoot 'obj/project.assets.json') -Raw | ConvertFrom-Json
+    $runtimePacks = @{}
+    foreach ($pack in 'Microsoft.NETCore.App.Runtime.win-x64', 'Microsoft.WindowsDesktop.App.Runtime.win-x64') {
+        $dependency = @($assets.project.frameworks.PSObject.Properties.Value.downloadDependencies |
+            Where-Object name -EQ $pack)
+        if ($dependency.Count -ne 1 -or $dependency[0].version -ne "[$expectedRuntime, $expectedRuntime]") {
+            throw "The restored $pack version is not pinned to $expectedRuntime."
+        }
+        $packPath = @($assets.packageFolders.PSObject.Properties.Name | ForEach-Object {
+            Join-Path $_ ($pack.ToLowerInvariant() + '/' + $expectedRuntime)
+        } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
+        if ($packPath.Count -ne 1) { throw "The restored runtime pack is missing: $pack" }
+        $runtimePacks[$pack] = $packPath[0]
+    }
 
     New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $publishDirectory 'PDF Forge.exe') -Destination $stagingDirectory
@@ -191,22 +210,62 @@ try {
     Copy-Item -LiteralPath $popplerRootPath -Destination (Join-Path $stagingDirectory 'poppler') -Recurse
 
     $licenseDirectory = Join-Path $stagingDirectory 'licenses'
-    Copy-Item -LiteralPath (Join-Path $packageInfoPath 'recipe') `
-        -Destination (Join-Path $licenseDirectory 'Poppler-26.07.0-conda-recipe') -Recurse
-    $metadataDirectory = Join-Path $licenseDirectory 'Poppler-26.07.0-conda-metadata'
+    foreach ($pack in $runtimePacks.Keys) {
+        $destination = Join-Path $licenseDirectory "$pack-$expectedRuntime"
+        New-Item -ItemType Directory -Path $destination -Force | Out-Null
+        $notices = @(Get-ChildItem -LiteralPath $runtimePacks[$pack] -File |
+            Where-Object { $_.Name -match '^(LICENSE(\.TXT)?|THIRD-PARTY-NOTICES\.TXT)$' })
+        if ($notices.Count -eq 0) { throw "The runtime pack license is missing: $pack" }
+        $notices | Copy-Item -Destination $destination
+    }
+    $sdkRoot = Split-Path (Get-Command dotnet -CommandType Application).Source -Parent
+    Copy-Item -LiteralPath (Join-Path $sdkRoot 'ThirdPartyNotices.txt') `
+        -Destination (Join-Path $licenseDirectory "dotnet-sdk-$expectedSdk-ThirdPartyNotices.txt")
+    foreach ($file in Get-ChildItem -LiteralPath $stagingDirectory -Recurse -File) {
+        $relative = $file.FullName.Substring($stagingDirectory.Length + 1).Replace('\', '/')
+        if ($relative -match '(^|/)(node_modules|target|obj|TestResults|tests|fixtures?|screenshots|logs|\.git)(/|$)' -or
+            $file.Extension -match '^\.(cs|csproj|sln|rs|cpp|c|h|py|pdb|log|trx|pdf|png|jpe?g|zip|conda|tar|xz|zst)$' -or
+            ($file.Extension -match '^\.(docx?|rtf)$' -and $relative -notmatch '(^|/)licenses/')) {
+            throw "Development, source, or test content is not allowed in the package: $relative"
+        }
+    }
+    if ($StageOnly) {
+        $renderer = Join-Path $stagingDirectory 'poppler\Library\bin\pdftoppm.exe'
+        $rendererVersion = (& $renderer -v 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $rendererVersion -notmatch 'pdftoppm version 26\.09\.0') {
+            throw "The staged Poppler renderer did not start as version 26.09.0: $rendererVersion"
+        }
+        $nativeLicenses = @(Get-ChildItem -LiteralPath (Join-Path $stagingDirectory 'poppler\licenses') -Recurse -File -ErrorAction Stop)
+        if ($nativeLicenses.Count -eq 0) { throw 'The staged native dependency licenses are missing.' }
+        $manifest = @(Get-ChildItem -LiteralPath $stagingDirectory -Recurse -File | Sort-Object FullName |
+            ForEach-Object {
+                $relative = $_.FullName.Substring($stagingDirectory.Length + 1).Replace('\', '/')
+                $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                "$hash  $relative"
+            })
+        [IO.File]::WriteAllLines((Join-Path $stagingDirectory 'PAYLOAD.sha256'), $manifest,
+            [Text.UTF8Encoding]::new($false))
+        $payloadPath = Join-Path $outputRoot "PDF.Forge-v$version-payload"
+        if (Test-Path -LiteralPath $payloadPath) { throw "Payload already exists: $payloadPath" }
+        Move-Item -LiteralPath $stagingDirectory -Destination $payloadPath
+        [pscustomobject]@{
+            Path = $payloadPath
+            Files = $manifest.Count
+            Bytes = (Get-ChildItem -LiteralPath $payloadPath -Recurse -File | Measure-Object Length -Sum).Sum
+            ManifestSha256 = (Get-FileHash -LiteralPath (Join-Path $payloadPath 'PAYLOAD.sha256') -Algorithm SHA256).Hash
+        }
+        return
+    }
+    $metadataDirectory = Join-Path $licenseDirectory 'Poppler-26.09.0-conda-metadata'
     New-Item -ItemType Directory -Path $metadataDirectory -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $packageInfoPath 'index.json'), `
         (Join-Path $packageInfoPath 'about.json'), `
         (Join-Path $packageInfoPath 'paths.json') -Destination $metadataDirectory
-    Copy-Item -LiteralPath $sourceArchivePath `
-        -Destination (Join-Path $licenseDirectory $expectedSourceFileName)
-    Copy-Item -LiteralPath $packageArchivePath `
-        -Destination (Join-Path $licenseDirectory $expectedPackageFileName)
 
     $renderer = Join-Path $stagingDirectory 'poppler\Library\bin\pdftoppm.exe'
     $rendererVersion = (& $renderer -v 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or $rendererVersion -notmatch 'pdftoppm version 26\.07\.0') {
-        throw "The staged Poppler renderer did not start as version 26.07.0: $rendererVersion"
+    if ($LASTEXITCODE -ne 0 -or $rendererVersion -notmatch 'pdftoppm version 26\.09\.0') {
+        throw "The staged Poppler renderer did not start as version 26.09.0: $rendererVersion"
     }
 
     $hashLines = Get-ChildItem -LiteralPath (Join-Path $stagingDirectory 'poppler') -Recurse -File |
@@ -217,7 +276,7 @@ try {
             "$hash  $relative"
         }
     [System.IO.File]::WriteAllLines(
-        (Join-Path $licenseDirectory 'Poppler-26.07.0-FILES.sha256'),
+        (Join-Path $licenseDirectory 'Poppler-26.09.0-FILES.sha256'),
         $hashLines,
         [System.Text.UTF8Encoding]::new($false))
 
@@ -227,7 +286,7 @@ try {
             "PDF Forge version: $version",
             "Build date: $BuildDate",
             "Dotnet SDK: $sdkVersion",
-            'Poppler package: poppler=26.07.0=h6618ce5_3',
+            'Poppler package: poppler=26.09.0=h924501e_0',
             "Poppler package SHA-256: $expectedPackageSha256",
             "Poppler source SHA-256: $expectedSourceSha256",
             "Poppler feedstock revision: $expectedFeedstockRevision"
@@ -278,21 +337,16 @@ try {
         'NOTICE.md',
         'LICENSE.md',
         'poppler/Library/bin/pdftoppm.exe',
-        'licenses/Poppler-26.07.0-COPYING.txt',
-        'licenses/Poppler-26.07.0-SOURCE.md',
-        'licenses/Poppler-26.07.0-DEPENDENCIES.md',
-        'licenses/Poppler-26.07.0-FILES.sha256',
-        'licenses/BUILD-INFO.txt',
-        ('licenses/' + $expectedSourceFileName),
-        ('licenses/' + $expectedPackageFileName)
+        'licenses/Poppler-26.09.0-COPYING.txt',
+        'licenses/Poppler-26.09.0-SOURCE.md',
+        'licenses/Poppler-26.09.0-DEPENDENCIES.md',
+        'licenses/Poppler-26.09.0-FILES.sha256',
+        'licenses/BUILD-INFO.txt'
     )
     foreach ($entry in $requiredEntries) {
         if ($entries -notcontains $entry) {
             throw "Portable ZIP is missing required entry: $entry"
         }
-    }
-    if (-not ($entries | Where-Object { $_ -like 'licenses/Poppler-26.07.0-conda-recipe/*.patch' })) {
-        throw 'Portable ZIP is missing the Poppler Windows patch files.'
     }
 
     $zip = Get-Item -LiteralPath $zipPath
@@ -304,6 +358,11 @@ try {
     }
 }
 finally {
+    foreach ($temporaryPath in $stagingDirectory, $publishDirectory) {
+        if (-not (Test-PathWithin $temporaryPath $outputRoot) -or $temporaryPath -eq $outputRoot) {
+            throw "Refusing cleanup outside the package work directory: $temporaryPath"
+        }
+    }
     if (Test-Path -LiteralPath $stagingDirectory) {
         Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
     }

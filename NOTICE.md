@@ -8,10 +8,10 @@ Copyright © 2026 yaosio232.
 
 | 元件 | 版本 | 授權與聲明 |
 |---|---|---|
-| [iTextSharp](https://www.nuget.org/packages/iTextSharp/5.5.13.4) | 5.5.13.4 | iText Group NV；AGPLv3／商業授權雙軌。[原套件授權聲明](licenses/iTextSharp-5.5.13.4-LICENSE.md)含額外條款，例如保留 iText 製作或修改 PDF 時的 producer 資訊。 |
-| [BouncyCastle.Cryptography](https://www.nuget.org/packages/BouncyCastle.Cryptography/2.4.0) | 2.4.0 | The Legion of the Bouncy Castle Inc.；MIT。[原套件授權聲明](licenses/BouncyCastle.Cryptography-2.4.0-LICENSE.md)。 |
+| [iTextSharp](https://www.nuget.org/packages/iTextSharp/5.5.13.6) | 5.5.13.6 | iText Group NV；AGPLv3／商業授權雙軌。[原套件授權聲明](licenses/iTextSharp-5.5.13.6-LICENSE.md)含額外條款，例如保留 iText 製作或修改 PDF 時的 producer 資訊。 |
+| [BouncyCastle.Cryptography](https://www.nuget.org/packages/BouncyCastle.Cryptography/2.6.2) | 2.6.2 | The Legion of the Bouncy Castle Inc.；MIT。[原套件授權聲明](licenses/BouncyCastle.Cryptography-2.6.2-LICENSE.md)。 |
 | [Markdig](https://www.nuget.org/packages/Markdig/1.3.2) | 1.3.2 | Alexandre Mutel；BSD-2-Clause。[原套件授權聲明](licenses/Markdig-1.3.2-LICENSE.txt)。 |
-| [Poppler](https://poppler.freedesktop.org/) | 26.07.0 | The Poppler Developers；GPL-2.0-or-later。可攜版 ZIP 使用 conda-forge 套件 `poppler=26.07.0=h6618ce5_3` 的 `pdftoppm.exe` 產生 Split Preview；[GPLv2 全文](licenses/Poppler-26.07.0-COPYING.txt)、原始碼、精確 recipe revision 與 binary hash 見 [Poppler 來源說明](licenses/Poppler-26.07.0-SOURCE.md)。 |
-| .NET / Windows Forms | .NET 6 | 自包含 Windows 發佈會帶入 .NET 執行元件；其授權與第三方聲明由 [.NET 授權資訊](https://github.com/dotnet/core/blob/main/license-information.md)說明。 |
+| [Poppler](https://poppler.freedesktop.org/) | 26.09.0 | The Poppler Developers；GPL-2.0-or-later。本分支釘選 conda-forge 套件 `poppler=26.09.0=h924501e_0` 的 `pdftoppm.exe`；[GPLv2 全文](licenses/Poppler-26.09.0-COPYING.txt)、原始碼、recipe revision 與 binary hash 見 [Poppler 來源說明](licenses/Poppler-26.09.0-SOURCE.md)。 |
+| .NET / Windows Forms | .NET 10.0.14 | 自包含 Windows 發佈會帶入 .NET 執行元件；其授權與第三方聲明由 [.NET 授權資訊](https://github.com/dotnet/core/blob/main/license-information.md)說明。 |
 
-上述第三方聲明取自建置與可攜版封裝使用的套件，並不表示 PDF Forge 擁有這些套件的著作權。Poppler Windows bundle 的實際檔案、直接相依版本範圍與授權來源列在 [原生相依清單](licenses/Poppler-26.07.0-DEPENDENCIES.md)；各元件保留自己的授權。Microsoft Word 不隨 PDF Forge 提供；Word 文件合併及 PDF → Word 需要另外安裝桌面版 Word。Markdown → PDF 使用另外安裝的 Edge 或 Chrome，瀏覽器不隨本程式提供。
+上述第三方聲明取自建置與釘選的套件，並不表示 PDF Forge 擁有這些套件的著作權。Poppler 26.09.0 的已解析 Windows 相依版本及授權列在 [原生相依清單](licenses/Poppler-26.09.0-DEPENDENCIES.md)；交付 payload 內另保留原生元件及 .NET runtime 的授權文字。原始碼由上述儲存庫與對應 Git tag 獨立提供，原生元件的來源連結見來源及相依說明。Microsoft Word 不隨 PDF Forge 提供；Word 文件合併及 PDF → Word 需要另外安裝桌面版 Word。Markdown → PDF 使用另外安裝的 Edge 或 Chrome，瀏覽器不隨本程式提供。

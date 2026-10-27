@@ -2,7 +2,7 @@
 
 PDF Forge 是 Windows 桌面 PDF 工具。你可以用它預覽並分割 PDF、依指定順序合併文件，或在知道密碼的情況下批次產生未加密的 PDF 副本。檔案在本機處理。
 
-原始碼公開在 [GitHub](https://github.com/yaosio232/pdf-forge)；Windows 可攜版 ZIP 可從 [Releases](https://github.com/yaosio232/pdf-forge/releases) 下載。ZIP 內含 PDF 預覽所需的 Poppler，請完整解壓後使用。
+原始碼公開在 [GitHub](https://github.com/yaosio232/pdf-forge)。各版本交付檔案與待驗範圍請見 [Releases](https://github.com/yaosio232/pdf-forge/releases)。
 
 ## 可以做什麼
 
@@ -14,7 +14,7 @@ PDF Forge 是 Windows 桌面 PDF 工具。你可以用它預覽並分割 PDF、�
 
 ## 開始使用
 
-在 Windows 上完整解壓 Release ZIP，保留 `PDF Forge.exe` 與旁邊的 `poppler` 資料夾，再開啟 `PDF Forge.exe`。單獨複製 EXE 會缺少 Split Preview 所需的 `pdftoppm.exe` 與原生 DLL。若你是從原始碼執行，請先安裝 .NET 6 SDK 與 Poppler，再於專案目錄執行：
+主要可攜交付必須是包含 .NET、Poppler、原生 DLL、字型和第三方授權的單一 Windows EXE；程式可自行解開至私人快取。舊版 ZIP 需要完整解壓並保留旁邊的 `poppler` 資料夾，並非單檔版。實際交付與驗收狀態以對應 Release 說明為準。從本分支原始碼執行需 Windows 10／11 x64、.NET SDK 10.0.403 和可用的 Poppler renderer；Word 轉換另需桌面版 Word：
 
 ```powershell
 dotnet run --project .\Pdf_Merger.csproj
@@ -35,7 +35,11 @@ Markdown 在隔離的本機瀏覽器設定檔中列印，禁止讀取外部圖�
 
 ## 從原始碼建置
 
-本專案使用 C#、WinForms 與 .NET 6，主要目標是 Windows x64。建置與執行測試：
+單檔交付先以 `scripts/Publish-Portable.ps1 -StageOnly` 準備並核對完整 payload（其餘 Poppler 參數沿用下方範例），再執行 `scripts/Publish-SingleFile.ps1 -PayloadDirectory <payload 路徑>`。第二步需 Rust/Cargo，會檢查封裝內容、執行 launcher 測試，並產生 `dist/v1.0.5.2/PDF-Forge-1.0.5.2-windows-x64-portable.exe`。外層啟動器靜態連結 runtime，啟動後在 `%LOCALAPPDATA%/PDFForge/portable` 的版本／payload 雜湊私人快取中核對並解開內部檔案；無需保留旁置 DLL 或 resources。Cargo 內部版本 `1.0.5+2` 對應 Windows 交付版本 `1.0.5.2`。啟動器及其 Rust／LLVM 相依套件的原始授權保存在 `licenses/portable-launcher/`；必要的 Microsoft runtime `LICENSE.DOCX` 屬第三方授權，不是使用者文件。
+
+本專案使用 C#、WinForms 與 .NET 10（SDK 10.0.403、自包含執行環境 10.0.14），支援 Windows 10／11 x64，不再支援 Windows 7／8.1。建置與執行測試：
+
+iTextSharp 5.5.13.6 使用 .NET Framework 相容資產，還原／建置會保留 `NU1701` 警告；建置與單元測試不代表所有文件或 UI 相容性已驗收。
 
 ```powershell
 dotnet restore .\Pdf_Merger.sln
@@ -49,26 +53,26 @@ dotnet test .\Pdf_Merger.sln --no-build --logger "console;verbosity=minimal"
 dotnet publish .\Pdf_Merger.csproj -c Release -r win-x64 --self-contained
 ```
 
-發佈產物由 .NET 放在 `bin/Release/` 下的 `publish` 目錄；`dist/` 是專案另行整理交付檔案時使用的目錄，不納入 Git。正式可攜 ZIP 必須使用 `scripts/Publish-Portable.ps1` 建立，並明確提供 Poppler runtime、解開後的 conda package `info` 目錄與 upstream source archive：
+發佈產物由 .NET 放在 `bin/Release/` 下的 `publish` 目錄；`dist/` 不納入 Git。`scripts/Publish-Portable.ps1` 可用 `-StageOnly` 準備供外層單檔 launcher 封裝的乾淨 payload；預設模式僅建立補充 ZIP。它要求 Poppler runtime、解開後的 conda package `info` 目錄與 upstream source archive：
 
 ```powershell
 .\scripts\Publish-Portable.ps1 `
   -PopplerRoot C:\path\to\poppler `
   -PopplerPackageInfoDirectory C:\path\to\expanded\info `
-  -PopplerSourceArchive C:\path\to\poppler-26.07.0.tar.xz `
-  -PopplerPackageArchive C:\path\to\poppler-26.07.0-h6618ce5_3.conda `
-  -BuildDate 2026-09-29
+  -PopplerSourceArchive C:\path\to\poppler-26.09.0.tar.xz `
+  -PopplerPackageArchive C:\path\to\poppler-26.09.0-h924501e_0.conda `
+  -BuildDate 2026-10-27
 ```
 
-腳本固定使用 .NET SDK 8.0.409，並驗證 Poppler runtime、package/source SHA-256、授權、feedstock revision、recipe 與 Windows patches；任何項目不符都會直接失敗。`BuildDate` 同時固定 EXE metadata 與 ZIP entry timestamps。只執行 `dotnet publish` 產生的裸 EXE 不包含 Split Preview renderer。
+腳本固定使用 .NET SDK 10.0.403／runtime 10.0.14，並驗證 Poppler package/source SHA-256、授權、feedstock revision、recipe 與 Windows patches；原始碼與 recipe 僅供建置端核對，不混入交付套件。`BuildDate` 同時固定 EXE metadata 與 ZIP entry timestamps。裸 EXE 與含 sidecar 檔案的 ZIP 均未達單檔交付標準；交付前還須驗證實際單檔 EXE。
 
 ## 開源授權
 
 PDF Forge 的原始程式碼以 [GNU Affero General Public License v3.0（AGPL-3.0-only）](LICENSE.md) 開源。你可以使用、研究、修改與再散布，但散布修改版或提供網路服務時，須遵守 AGPLv3 的原始碼與授權告知義務。本工具產生或處理的 PDF，不會只因使用本工具而自動套用 AGPLv3。
 
-PDF Forge 使用 [iTextSharp 5.5.13.4](https://www.nuget.org/packages/iTextSharp/5.5.13.4)，它採 AGPLv3／商業授權雙軌；也使用採 MIT 授權的 BouncyCastle.Cryptography，以及 BSD-2-Clause 授權的 Markdig 1.3.2。這些相依套件保留各自的著作權與授權條款，詳見 [授權與第三方聲明](NOTICE.md)。本專案不提供保固。
+PDF Forge 使用 [iTextSharp 5.5.13.6](https://www.nuget.org/packages/iTextSharp/5.5.13.6)，它採 AGPLv3／商業授權雙軌；也使用採 MIT 授權的 BouncyCastle.Cryptography，以及 BSD-2-Clause 授權的 Markdig 1.3.2。這些相依套件保留各自的著作權與授權條款，詳見 [授權與第三方聲明](NOTICE.md)。本專案不提供保固。
 
-可攜版 ZIP 另附 [Poppler](https://poppler.freedesktop.org/) 26.07.0（GPL-2.0-or-later）及其 Windows 原生相依檔；Windows binary 取自 conda-forge 套件 `poppler=26.07.0=h6618ce5_3`。相關授權與可取得對應原始碼的資訊包含在 ZIP、[NOTICE.md](NOTICE.md) 與 [Poppler 來源說明](licenses/Poppler-26.07.0-SOURCE.md)。
+本分支釘選 [Poppler](https://poppler.freedesktop.org/) 26.09.0（GPL-2.0-or-later），Windows binary 為 conda-forge `poppler=26.09.0=h924501e_0`；套件與原始碼雜湊、授權及原生相依清單見 [NOTICE.md](NOTICE.md)、[來源說明](licenses/Poppler-26.09.0-SOURCE.md) 與 [相依清單](licenses/Poppler-26.09.0-DEPENDENCIES.md)。預覽程序有時間與記憶體限制，但 Poppler 26.09.0 的 Splash DoS 問題 CVE-2026-93653 尚未由上游修補。
 
 ## 專案文件
 

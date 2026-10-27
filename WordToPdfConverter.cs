@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 
 namespace Pdf_Merger;
 
@@ -18,34 +19,19 @@ public sealed class WordToPdfConverter : IWordToPdfConverter
         var tempDirectory = Path.Combine(Path.GetTempPath(), "PdfMerger");
         Directory.CreateDirectory(tempDirectory);
         var outputPath = Path.Combine(tempDirectory, $"{Guid.NewGuid():N}.pdf");
+        var marker = Path.Combine(tempDirectory, $"{Guid.NewGuid():N}.word.json");
         object? application = null;
-        object? documents = null;
-        object? document = null;
+        Process? process = null;
 
         try
         {
-            dynamic word = Activator.CreateInstance(wordType)!;
+            process = WordConversionWorker.StartOwnedWord(marker);
+            dynamic word = WordConversionWorker.GetOwnedApplication(process);
             application = word;
             word.Visible = false;
             word.ScreenUpdating = false;
             word.DisplayAlerts = 0;
-
-            documents = word.Documents;
-            document = ((dynamic)documents).Open(
-                sourcePath,
-                ReadOnly: true,
-                AddToRecentFiles: false,
-                Visible: false);
-
-            ((dynamic)document).ExportAsFixedFormat(
-                outputPath,
-                PdfFormat,
-                OpenAfterExport: false,
-                OptimizeFor: 0,
-                CreateBookmarks: true,
-                DocStructureTags: true,
-                BitmapMissingFonts: true,
-                UseISO19005_1: false);
+            ConvertWithApplication(word, sourcePath, outputPath);
 
             if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
             {
@@ -65,18 +51,6 @@ public sealed class WordToPdfConverter : IWordToPdfConverter
         {
             try
             {
-                if (document is not null)
-                {
-                    ((dynamic)document).Close(SaveChanges: false);
-                }
-            }
-            catch (Exception exception)
-            {
-                Logger.LogError($"Closing Word document '{sourcePath}' failed.", exception);
-            }
-
-            try
-            {
                 if (application is not null)
                 {
                     ((dynamic)application).Quit(SaveChanges: false);
@@ -87,9 +61,34 @@ public sealed class WordToPdfConverter : IWordToPdfConverter
                 Logger.LogError("Closing Word failed.", exception);
             }
 
+            ReleaseComObject(application);
+            WordConversionWorker.StopOwnedWord(marker);
+            TryDelete(marker);
+            process?.Dispose();
+        }
+    }
+
+    internal static void ConvertWithApplication(object application, string sourcePath, string outputPath)
+    {
+        dynamic word = application;
+        word.AutomationSecurity = 3; // Fail closed before touching Documents or opening a file.
+        object? documents = null;
+        object? document = null;
+        try
+        {
+            documents = word.Documents;
+            document = ((dynamic)documents).Open(sourcePath, ReadOnly: true,
+                AddToRecentFiles: false, Visible: false);
+            ((dynamic)document).ExportAsFixedFormat(outputPath, PdfFormat,
+                OpenAfterExport: false, OptimizeFor: 0, CreateBookmarks: true,
+                DocStructureTags: true, BitmapMissingFonts: true, UseISO19005_1: false);
+        }
+        finally
+        {
+            try { if (document is not null) ((dynamic)document).Close(SaveChanges: false); }
+            catch (Exception exception) { Logger.LogError($"Closing Word document '{sourcePath}' failed.", exception); }
             ReleaseComObject(document);
             ReleaseComObject(documents);
-            ReleaseComObject(application);
         }
     }
 

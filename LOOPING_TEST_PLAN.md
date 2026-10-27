@@ -1,5 +1,9 @@
 # PDF Merger Looping 完整測試計畫
 
+### 2026-10-27 v1.0.5.2 安全維護待驗交付
+
+使用者要求修補後上傳執行檔。單檔 EXE 的建置、內容、SHA-256 與原生 renderer 回歸必須在上傳前完成；本輪仍遵守 40 頁、固定 7/7/7/7/6/6 分割與 SPLIT-01 至 SPLIT-12 UI 驗收標準。無法從 WinForms UI 操作並取得證據的測項維持 `BLOCKED`，不可由單元測試或封裝成功推定通過。待驗預發佈須標示剩餘風險與相容性限制，不上傳本機測試資料。
+
 ### 2026-10-05 v1.0.5.1 跨電腦待驗交付
 
 使用者要求本輪不用繼續驗證，直接打包上傳，並指定 v1.0.5.1，供另一台電腦實測。依 AGENTS.md 本次例外發佈 EXE／可攜版 ZIP，不合併 main。剩餘 SPLIT-01 至 SPLIT-12 與 WinForms 轉換／取消／關閉／原有 Word 保護驗收未完成的項目維持 BLOCKED；不以打包成功取代驗收。UI 擷取出現 FrameArrived timed out／window capture timed out，點擊缺少 geometry，使用者已以 Escape 停止 Computer Use。發佈頁揭露待驗範圍；所有本機 fixture、文件、log、截圖與 hash 保持本機。

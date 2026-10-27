@@ -39,26 +39,26 @@ PDF Merger 是 Windows 桌面工具。使用者把 PDF、DOC 或 DOCX 拖入清�
 | 項目 | 目前設定 |
 |---|---|
 | UI | Windows Forms |
-| 語言／執行環境 | C#、.NET 6、`net6.0-windows` |
+| 語言／執行環境 | C#、.NET 10.0.14、`net10.0-windows10.0.17763.0`；SDK 10.0.403 |
 | 目標平台 | `win-x64` |
-| PDF 引擎 | iTextSharp 5.5.13.4 |
+| PDF 引擎 | iTextSharp 5.5.13.6 |
 | 記錄套件 | Microsoft.Extensions.Logging 8.0.0 與 Abstractions 8.0.0；目前程式未實際呼叫這兩個套件，而是使用自製 `Logger` |
-| 發佈 | Self-contained、single-file、未 trimming；正式交付以 portable ZIP 封裝 Poppler |
+| 發佈 | 單檔 EXE 需以 launcher 封裝 .NET 自包含 EXE 與 Poppler payload；ZIP 僅為補充套件 |
 | Word 轉換 | Microsoft Word COM Automation，需安裝可自動化的桌面版 Word |
 | 應用圖示 | `Resources/pdfMeld.ico`，同時設定為 ApplicationIcon 與 EmbeddedResource |
 
-正式可攜版使用專案封裝腳本，明確指定 Poppler runtime、conda package metadata 與對應 upstream source：
+payload／補充 ZIP 腳本明確指定 Poppler runtime、conda package metadata 與對應 upstream source；`-StageOnly` 輸出供 launcher 封裝的 payload：
 
 ```powershell
 .\scripts\Publish-Portable.ps1 `
   -PopplerRoot C:\path\to\poppler `
   -PopplerPackageInfoDirectory C:\path\to\expanded\info `
-  -PopplerSourceArchive C:\path\to\poppler-26.07.0.tar.xz `
-  -PopplerPackageArchive C:\path\to\poppler-26.07.0-h6618ce5_3.conda `
-  -BuildDate 2026-09-29
+  -PopplerSourceArchive C:\path\to\poppler-26.09.0.tar.xz `
+  -PopplerPackageArchive C:\path\to\poppler-26.09.0-h924501e_0.conda `
+  -BuildDate 2026-10-27
 ```
 
-單獨執行 `dotnet publish` 只會建立 .NET 自包含 EXE，不會包含 Split Preview 使用的 Poppler；不得直接把裸 EXE 當作完整可攜版。
+單獨執行 `dotnet publish` 只會建立 .NET 自包含 EXE，不會包含 Split Preview 使用的 Poppler；不得直接把裸 EXE 當作完整可攜版。支援 Windows 10／11 x64，不支援 Windows 7／8.1。預覽程序使用 Windows job 在解析 PDF 前限制為 120 秒 wall time、90 秒 CPU、1 GiB 記憶體；不收集 stdout/stderr 文字以免無界累積。Poppler 26.09.0 的 CVE-2026-93653 仍是上游未修復的 Splash DoS，這些限制是緩解措施。
 
 ### 3.1 目前建置基線
 
@@ -68,7 +68,7 @@ PDF Merger 是 Windows 桌面工具。使用者把 PDF、DOC 或 DOCX 拖入清�
 dotnet build .\Pdf_Merger.sln --no-restore
 ```
 
-結果為失敗，原因是本機尚未下載 `Microsoft.NETCore.App.Runtime.win-x64` 與 `Microsoft.WindowsDesktop.App.Runtime.win-x64` 6.0.36 runtime packs。另出現 `NU1701`：iTextSharp 5.5.13.4 以 .NET Framework 相容資產還原，與 `net6.0-windows7.0` 不保證完全相容。這是環境／相依性基線，不等於原始碼一定無法建置；需先完成 `dotnet restore -r win-x64` 再驗證。
+該舊版建置記錄當時因缺少 .NET 6 runtime packs 失敗。2026-10-27 的本分支改用 .NET 10.0.14，iTextSharp 5.5.13.6 仍以 .NET Framework 相容資產還原並產生 `NU1701`；此警告刻意保留，不視為相容性已完整驗證。
 
 ## 4. 整體架構與資料流
 
