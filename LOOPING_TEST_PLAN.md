@@ -1,5 +1,10 @@
 # PDF Merger Looping 完整測試計畫
 
+## EXE／ZIP 成對交付檢查（2026-10-28 起）
+
+每個交付 EXE 都必須另包成 ZIP 並一併上傳 GitHub Release（本機交付亦須提供 ZIP）。ZIP 預設只含已驗證的單檔 EXE，不放展開後的 DLL／resources／licenses 目錄。逐項核對 ZIP 清單、解壓完整性、ZIP 內 EXE 與交付 EXE 的 SHA-256 一致，並將兩種檔案的大小及 SHA-256 記錄於交付報告與 SHA256SUMS.txt。既有 UI／跨機 BLOCKED 狀態不因補上 ZIP 改為 PASS。
+
+
 ## 2026-10-27 Issue #2 安全維護與單檔待驗交付
 
 依本輪使用者修補後上傳 EXE 的指示，1.x／v2 各自建立新版本，不合併 main、不覆寫 tag。驗證交付 EXE 的封裝內容、原生依賴、大小、SHA-256 與實際 worker 功能；v2 使用全新 40 頁及 7/7/7/7/6/6 的直接功能回歸，不操作 UI。1.x 實際嘗試 WinForms UI，擷取／座標受阻的項目保留 BLOCKED；Word 巨集實機測試若被既有信任政策阻擋，不更改安全設定，也不以 mock 取代。證據與使用者文件只保留本機，發佈頁揭露未完成項目及殘餘風險。
